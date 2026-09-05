@@ -430,6 +430,29 @@ async function importBackup(){
   finally{$('#importBackupBtn').disabled=false}
 }
 
+
+function parseDirectQrHash(){
+  const h=location.hash||'';
+  if(!h.startsWith('#Q')) return false;
+  try{
+    const a=h.slice(2).split('.');
+    if(a.length!==9 || !/^\d{6}$/.test(a[0])) throw new Error('Link QR non valido.');
+    const vals=a.slice(1).map(x=>parseInt(x,36));
+    if(vals.some(x=>!Number.isFinite(x)||x<0)) throw new Error('Valori QR non validi.');
+    const d='20'+a[0];
+    const payload=`S1|${d}|${vals.join('|')}`;
+    // Il link QR apre direttamente Master e precompila i dati. Il salvataggio resta volontario.
+    sessionStorage.setItem('wincity_v13_pending_qr',payload);
+    location.hash='';
+    return payload;
+  }catch(e){
+    sessionStorage.setItem('wincity_v13_qr_error',e.message);
+    location.hash='';
+    return false;
+  }
+}
+const DIRECT_QR_PAYLOAD=parseDirectQrHash();
+
 function parseQrPayload(payload){
   const parts=String(payload||'').trim().split('|');
   if(parts.length!==10 || parts[0]!=='S1') throw new Error('QR non riconosciuto.');
@@ -497,6 +520,18 @@ async function loadData(){
   currentMonth=db.records.length?db.records.at(-1).data.slice(0,7):new Date().toISOString().slice(0,7);
   $('#historyMonth').value=currentMonth;
   renderPeriodExtra();renderDashboard();
+  const pending=DIRECT_QR_PAYLOAD||sessionStorage.getItem('wincity_v13_pending_qr');
+  if(pending){
+    sessionStorage.removeItem('wincity_v13_pending_qr');
+    const masterBtn=document.querySelector('[data-view="master"]');
+    if(masterBtn) masterBtn.click();
+    if(sessionStorage.getItem('wincity_v13_master')==='1') applyQrPayload(pending);
+    else {
+      $('#qrPayload').value=pending;
+      $('#qrStatus').textContent='QR ricevuto. Accedi a Master per visualizzare e salvare i dati.';
+      sessionStorage.setItem('wincity_v13_pending_qr_after_login',pending);
+    }
+  }
 }
 $('#periodType').addEventListener('change',()=>{renderPeriodExtra();renderDashboard()});
 $('#prevPeriod').addEventListener('click',()=>shiftPeriod(-1));

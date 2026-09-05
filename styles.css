@@ -143,3 +143,57 @@ main{max-width:1500px;margin:auto;padding:20px 24px 100px}
   .date-range label{display:grid;grid-template-columns:58px minmax(0,1fr)}
   #periodExtra select,#periodExtra input{font-size:16px;width:100%;min-width:0}
 }
+
+
+/* UPDATE 2 — definitive asset refresh + header wave */
+.hero{
+  background-color:#fff!important;
+  background-image:url("wave-single.svg")!important;
+  background-repeat:no-repeat!important;
+  background-position:left bottom!important;
+  background-size:100% 58px!important;
+  padding-bottom:42px!important;
+}
+.hero:after{display:none!important}
+
+.main-nav{
+  background:linear-gradient(90deg,#c70d22 0%,#e3152c 55%,#dc1027 100%)!important;
+  min-height:52px!important;
+  padding:7px!important;
+}
+
+.kpi .neutral-value{
+  color:#132238!important;
+  opacity:1!important;
+}
+
+.kpi .icon{
+  color:#132238;
+  font-weight:900;
+}
+
+@media(max-width:700px){
+  .hero{
+    grid-template-columns:104px minmax(0,1fr) 36px!important;
+    min-height:88px!important;
+    padding:7px 10px 28px!important;
+    background-size:100% 38px!important;
+  }
+  .brand-logo{
+    width:98px!important;
+    max-height:56px!important;
+  }
+  .hero-title{
+    text-align:center!important;
+    min-width:0!important;
+  }
+  .hero h1{
+    font-size:19px!important;
+    line-height:1.05!important;
+    margin:3px 0 0!important;
+  }
+  .hero .eyebrow{
+    font-size:6.5px!important;
+    white-space:nowrap!important;
+  }
+}

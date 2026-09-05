@@ -141,7 +141,7 @@ function renderDashboard(){
 
   const cards=[
     ['⚽','Totale giocato',agency.g,'','Sport + Virtual Agenzia'],
-    ['●','Totale pagato',agency.p,'','Sport + Virtual Agenzia'],
+    ['€','Totale pagato',agency.p,'','Sport + Virtual Agenzia'],
     ['▥','Lordo',agency.lordo,agency.lordo<0?'negative':'orange','Margine lordo'],
     ['↗','Netto',agency.netto,agency.netto<0?'negative':'green','Netto dopo tasse']
   ];

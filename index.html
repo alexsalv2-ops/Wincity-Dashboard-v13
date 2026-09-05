@@ -11,7 +11,7 @@
   <header class="hero">
     <img class="brand-logo" src="wincity-logo.png" alt="Sisal Wincity">
     <div class="hero-title">
-      <div class="eyebrow">RM1771 · Dashboard v13</div>
+      <div class="eyebrow">RM1771 · Dashboard</div>
       <h1>Wincity Trani</h1>
       <p>Controllo rendiconti, giocate e statistiche</p>
     </div>
@@ -37,9 +37,16 @@
       <div class="period-panel">
         <label>Periodo
           <select id="periodType">
-            <option value="currentMonth">Mese corrente</option>
+            <option value="today">Oggi</option>
+            <option value="currentWeek">Settimana corrente</option>
+            <option value="currentMonth" selected>Mese corrente</option>
+            <option value="previousMonth">Mese precedente</option>
             <option value="specificMonth">Mese specifico</option>
+            <option value="semester">Semestre</option>
+            <option value="currentYear">Anno corrente</option>
+            <option value="all">Cumulato totale</option>
             <option value="day">Giorno specifico</option>
+            <option value="range">Intervallo date</option>
           </select>
         </label>
         <div id="periodExtra"></div>

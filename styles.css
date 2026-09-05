@@ -105,3 +105,41 @@ main{max-width:1500px;margin:auto;padding:20px 24px 100px}
   .bottom-nav button{border:0;background:white;padding:13px 8px;display:grid;gap:4px;place-items:center}.bottom-nav button.active{background:#fff0f2;color:var(--red)}
   .bottom-nav span{font-size:11px}
 }
+
+
+/* CLEAN UPDATE 1 — coordinated header, navigation, period controls */
+.hero{
+  grid-template-columns:200px 1fr 200px;
+  min-height:118px;
+  padding:10px max(24px,4vw) 32px;
+}
+.hero:after{
+  height:46px;
+  background:linear-gradient(180deg,#ef7583 0 12%,#e93045 12% 30%,#d10e24 30% 100%);
+  clip-path:polygon(0 55%,12% 35%,24% 48%,36% 27%,49% 39%,61% 23%,74% 40%,87% 24%,100% 37%,100% 100%,0 100%);
+}
+.brand-logo{width:175px;max-height:82px}
+.hero h1{font-size:31px}
+.main-nav{margin-top:-1px;min-height:54px;align-items:center}
+.neutral-value{color:var(--navy)!important}
+.date-range{display:flex;gap:10px;align-items:center}
+.date-range label{display:flex;gap:8px;align-items:center}
+
+@media(max-width:700px){
+  .hero{
+    grid-template-columns:118px minmax(0,1fr) 38px;
+    gap:10px;
+    min-height:92px;
+    padding:8px 12px 24px;
+  }
+  .brand-logo{width:112px;max-height:62px}
+  .hero-title{text-align:center}
+  .hero h1{font-size:20px;white-space:nowrap}
+  .hero .eyebrow{font-size:7px}
+  .refresh{width:36px;height:36px;font-size:17px}
+  .hero:after{height:32px}
+  .period-panel label{grid-template-columns:58px minmax(0,1fr)}
+  .date-range{display:grid;grid-template-columns:1fr;gap:8px;width:100%}
+  .date-range label{display:grid;grid-template-columns:58px minmax(0,1fr)}
+  #periodExtra select,#periodExtra input{font-size:16px;width:100%;min-width:0}
+}

@@ -263,6 +263,11 @@ function masterLogin(){
     sessionStorage.setItem('wincity_v13_master','1');
     $('#masterPassword').value='';
     renderMasterState();
+    const pending=sessionStorage.getItem('wincity_v13_pending_qr_after_login');
+    if(pending){
+      sessionStorage.removeItem('wincity_v13_pending_qr_after_login');
+      applyQrPayload(pending);
+    }
   }else alert('Password Master non corretta.');
 }
 function masterLogout(){

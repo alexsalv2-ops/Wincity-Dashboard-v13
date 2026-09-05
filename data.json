@@ -2896,16 +2896,29 @@
       "vt-p": 275.69,
       "aw-g": 40,
       "aw-p": 30,
-      "so-g": 0,
-      "so-p": 0,
+      "so-g": 182,
+      "so-p": 463.37,
       "vo-g": 0,
       "vo-p": 0,
-      "co-g": 0,
-      "co-p": 0,
-      "po-g": 0,
-      "po-p": 0,
+      "co-g": 347.33,
+      "co-p": 245.46,
+      "po-g": 35.97,
+      "po-p": 19.76,
       "conti": 0,
-      "aggiornato": "2026-08-08T22:10:52.166Z"
+      "simpRaw": {
+        "sport": {
+          "emessi": 4884.8,
+          "annulli": 0,
+          "pagati": 3203.28,
+          "rimborsati": 0
+        },
+        "virtual": {
+          "emessi": 316.35,
+          "annulli": 0,
+          "pagati": 275.69,
+          "rimborsati": 0
+        }
+      }
     },
     {
       "data": "2026-08-09",

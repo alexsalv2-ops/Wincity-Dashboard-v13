@@ -222,6 +222,7 @@ const TOKEN_KEY='wincity_v13_gh_token';
 const GH_REPO='alexsalv2-ops/Wincity-Dashboard-v13';
 const GH_FILE='data.json';
 const PENDING_QR_KEY='wincity_v13_pending_qr_persist';
+const PENDING_ONLINE_KEY='wincity_v13_pending_online_persist';
 let qrScanner=null;
 let githubTokenMemory='';
 function getGithubToken(){
@@ -290,6 +291,12 @@ function masterLogin(){
     $('#masterPassword').value='';
     renderMasterState();
     // QR direct-link: recupero robusto anche dopo login/re-render del Master.
+    const pendingOnline=localStorage.getItem(PENDING_ONLINE_KEY) || sessionStorage.getItem('wincity_v13_pending_online_after_login');
+    if(pendingOnline){
+      sessionStorage.removeItem('wincity_v13_pending_online_after_login');
+      applyOnlinePayload(pendingOnline);
+      return;
+    }
     const pending=localStorage.getItem(PENDING_QR_KEY) || sessionStorage.getItem('wincity_v13_pending_qr_after_login');
     if(pending){
       sessionStorage.removeItem('wincity_v13_pending_qr_after_login');
@@ -463,6 +470,51 @@ async function importBackup(){
 }
 
 
+
+function parseDirectOnlineHash(){
+  const h=location.hash||'';
+  if(!h.startsWith('#online=')) return false;
+  try{
+    const payload=decodeURIComponent(h.slice('#online='.length));
+    parseOnlinePayload(payload); // valida prima di conservarlo
+    localStorage.setItem(PENDING_ONLINE_KEY,payload);
+    sessionStorage.setItem('wincity_v13_pending_online',payload);
+    return payload;
+  }catch(e){
+    sessionStorage.setItem('wincity_v13_online_error',e.message);
+    return false;
+  }
+}
+function parseOnlinePayload(payload){
+  const parts=String(payload||'').trim().split('|');
+  if(parts.length!==10 || parts[0]!=='O1') throw new Error('Dati Online non riconosciuti.');
+  if(!/^\d{8}$/.test(parts[1])) throw new Error('Data Online non valida.');
+  const vals=parts.slice(2).map(x=>Number(x));
+  if(vals.some(x=>!Number.isFinite(x)||x<0)) throw new Error('Valori Online non validi.');
+  const d=parts[1],date=`${d.slice(0,4)}-${d.slice(4,6)}-${d.slice(6,8)}`;
+  return {date,soG:vals[0],soP:vals[1],voG:vals[2],voP:vals[3],coG:vals[4],coP:vals[5],poG:vals[6],poP:vals[7]};
+}
+function applyOnlinePayload(payload){
+  try{
+    const o=parseOnlinePayload(payload);
+    $('#entryDate').value=o.date;
+    // Prima carica l'eventuale giornata esistente: Sport/Virtual Agenzia, VLT, Conti e simpRaw restano invariati.
+    loadDayToForm();
+    setVal('soG',o.soG); setVal('soP',o.soP);
+    setVal('voG',o.voG); setVal('voP',o.voP);
+    setVal('coG',o.coG); setVal('coP',o.coP);
+    setVal('poG',o.poG); setVal('poP',o.poP);
+    $('#saveStatus').textContent=`Online importato: ${dmy(o.date)}. Controlla i valori e premi Salva giornata su GitHub.`;
+    localStorage.removeItem(PENDING_ONLINE_KEY);
+    sessionStorage.removeItem('wincity_v13_pending_online');
+    sessionStorage.removeItem('wincity_v13_pending_online_after_login');
+    if(location.hash.startsWith('#online=')) history.replaceState(null,'',location.pathname+location.search);
+  }catch(e){
+    $('#saveStatus').textContent='Errore Online: '+e.message;
+  }
+}
+const DIRECT_ONLINE_PAYLOAD=parseDirectOnlineHash();
+
 function parseDirectQrHash(){
   const h=location.hash||'';
   if(!h.startsWith('#Q')) return false;
@@ -557,6 +609,18 @@ async function loadData(){
   currentMonth=db.records.length?db.records.at(-1).data.slice(0,7):new Date().toISOString().slice(0,7);
   $('#historyMonth').value=currentMonth;
   renderPeriodExtra();renderDashboard();
+  const pendingOnline=DIRECT_ONLINE_PAYLOAD || localStorage.getItem(PENDING_ONLINE_KEY) || sessionStorage.getItem('wincity_v13_pending_online');
+  if(pendingOnline){
+    const masterBtn=document.querySelector('[data-view="master"]');
+    if(masterBtn) masterBtn.click();
+    if(sessionStorage.getItem('wincity_v13_master')==='1') applyOnlinePayload(pendingOnline);
+    else {
+      $('#saveStatus').textContent='Dati Online ricevuti. Accedi a Master per visualizzarli e salvarli.';
+      localStorage.setItem(PENDING_ONLINE_KEY,pendingOnline);
+      sessionStorage.setItem('wincity_v13_pending_online_after_login',pendingOnline);
+    }
+    return;
+  }
   const pending=DIRECT_QR_PAYLOAD || localStorage.getItem(PENDING_QR_KEY) || sessionStorage.getItem('wincity_v13_pending_qr');
   if(pending){
     const masterBtn=document.querySelector('[data-view="master"]');

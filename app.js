@@ -221,6 +221,7 @@ const MASTER_PASSWORD='WincityMaster';
 const TOKEN_KEY='wincity_v13_gh_token';
 const GH_REPO='alexsalv2-ops/Wincity-Dashboard-v13';
 const GH_FILE='data.json';
+const PENDING_QR_KEY='wincity_v13_pending_qr_persist';
 let qrScanner=null;
 
 function isMaster(){return sessionStorage.getItem('wincity_v13_master')==='1'}
@@ -263,7 +264,8 @@ function masterLogin(){
     sessionStorage.setItem('wincity_v13_master','1');
     $('#masterPassword').value='';
     renderMasterState();
-    const pending=sessionStorage.getItem('wincity_v13_pending_qr_after_login');
+    // QR direct-link: recupero robusto anche dopo login/re-render del Master.
+    const pending=localStorage.getItem(PENDING_QR_KEY) || sessionStorage.getItem('wincity_v13_pending_qr_after_login');
     if(pending){
       sessionStorage.removeItem('wincity_v13_pending_qr_after_login');
       applyQrPayload(pending);
@@ -446,13 +448,13 @@ function parseDirectQrHash(){
     if(vals.some(x=>!Number.isFinite(x)||x<0)) throw new Error('Valori QR non validi.');
     const d='20'+a[0];
     const payload=`S1|${d}|${vals.join('|')}`;
-    // Il link QR apre direttamente Master e precompila i dati. Il salvataggio resta volontario.
+    // Persisto il payload fino a quando viene realmente applicato al modulo Master.
+    // localStorage evita che alcuni browser mobili lo perdano durante il passaggio login/view.
+    localStorage.setItem(PENDING_QR_KEY,payload);
     sessionStorage.setItem('wincity_v13_pending_qr',payload);
-    location.hash='';
     return payload;
   }catch(e){
     sessionStorage.setItem('wincity_v13_qr_error',e.message);
-    location.hash='';
     return false;
   }
 }
@@ -476,6 +478,11 @@ function applyQrPayload(payload){
     setVal('vtEmessi',q.vt.emessi);setVal('vtAnnulli',q.vt.annulli);setVal('vtPagati',q.vt.pagati);setVal('vtRimborsati',q.vt.rimborsati);
     updateRawPreview(); $('#qrPayload').value=payload;
     $('#qrStatus').textContent=`QR importato: ${dmy(q.date)}. Controlla i valori e premi Salva giornata.`;
+    // Solo adesso il QR è stato davvero trasferito nel modulo: pulizia sicura.
+    localStorage.removeItem(PENDING_QR_KEY);
+    sessionStorage.removeItem('wincity_v13_pending_qr');
+    sessionStorage.removeItem('wincity_v13_pending_qr_after_login');
+    if(location.hash.startsWith('#Q')) history.replaceState(null,'',location.pathname+location.search);
     stopQr();
   }catch(e){$('#qrStatus').textContent='Errore QR: '+e.message}
 }
@@ -525,15 +532,15 @@ async function loadData(){
   currentMonth=db.records.length?db.records.at(-1).data.slice(0,7):new Date().toISOString().slice(0,7);
   $('#historyMonth').value=currentMonth;
   renderPeriodExtra();renderDashboard();
-  const pending=DIRECT_QR_PAYLOAD||sessionStorage.getItem('wincity_v13_pending_qr');
+  const pending=DIRECT_QR_PAYLOAD || localStorage.getItem(PENDING_QR_KEY) || sessionStorage.getItem('wincity_v13_pending_qr');
   if(pending){
-    sessionStorage.removeItem('wincity_v13_pending_qr');
     const masterBtn=document.querySelector('[data-view="master"]');
     if(masterBtn) masterBtn.click();
     if(sessionStorage.getItem('wincity_v13_master')==='1') applyQrPayload(pending);
     else {
       $('#qrPayload').value=pending;
       $('#qrStatus').textContent='QR ricevuto. Accedi a Master per visualizzare e salvare i dati.';
+      localStorage.setItem(PENDING_QR_KEY,pending);
       sessionStorage.setItem('wincity_v13_pending_qr_after_login',pending);
     }
   }

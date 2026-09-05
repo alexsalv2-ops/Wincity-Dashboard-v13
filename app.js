@@ -207,11 +207,12 @@ function renderHistory(){
   }).join('');
 }
 function switchView(view){
-  const id=view==='dashboard'?'dashboardView':view==='history'?'historyView':'masterView';
+  const id=view==='dashboard'?'dashboardView':view==='history'?'historyView':view==='master'?'masterView':'settingsView';
   $$('.view').forEach(v=>v.classList.toggle('active',v.id===id));
   $$('[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view===view));
   if(view==='history')renderHistory();
   if(view==='master')renderMasterState();
+  if(view==='settings')renderSettingsState();
 }
 
 
@@ -228,9 +229,6 @@ function renderMasterState(){
   $('#masterLocked').hidden=unlocked;
   $('#masterUnlocked').hidden=!unlocked;
   if(unlocked){
-    const token=localStorage.getItem(TOKEN_KEY)||'';
-    $('#githubToken').value=token;
-    updateTokenStatus();
     loadRateFields();
     if(!$('#entryDate').value) $('#entryDate').value=latestDate();
     updateRawPreview();
@@ -238,8 +236,27 @@ function renderMasterState(){
 }
 function updateTokenStatus(){
   const ok=!!localStorage.getItem(TOKEN_KEY);
-  $('#tokenStatus').textContent=ok?'Token salvato':'Token non impostato';
-  $('#tokenStatus').className='pill '+(ok?'positive':'');
+  if($('#settingsTokenStatus')){
+    $('#settingsTokenStatus').textContent=ok?'Token salvato':'Token non impostato';
+    $('#settingsTokenStatus').className='pill '+(ok?'positive':'');
+  }
+}
+function renderSettingsState(){
+  const unlocked=isMaster();
+  $('#settingsLocked').hidden=unlocked;
+  $('#settingsUnlocked').hidden=!unlocked;
+  if(unlocked){
+    $('#settingsGithubToken').value=localStorage.getItem(TOKEN_KEY)||'';
+    updateTokenStatus(); loadRateFields();
+  }
+}
+function settingsLogin(){
+  if($('#settingsPassword').value===MASTER_PASSWORD){
+    sessionStorage.setItem('wincity_v13_master','1'); $('#settingsPassword').value=''; renderSettingsState();
+  }else alert('Password Master non corretta.');
+}
+function settingsLogout(){
+  sessionStorage.removeItem('wincity_v13_master'); renderSettingsState(); renderMasterState();
 }
 function masterLogin(){
   if($('#masterPassword').value===MASTER_PASSWORD){
@@ -457,11 +474,14 @@ async function stopQr(){
 $('#saveRatesBtn').addEventListener('click',saveRates);
 $('#exportBackupBtn').addEventListener('click',exportBackup);
 $('#importBackupBtn').addEventListener('click',importBackup);
+$('#settingsLoginBtn').addEventListener('click',settingsLogin);
+$('#settingsPassword').addEventListener('keydown',e=>{if(e.key==='Enter')settingsLogin()});
+$('#settingsLogoutBtn').addEventListener('click',settingsLogout);
+$('#settingsSaveTokenBtn').addEventListener('click',()=>{const t=$('#settingsGithubToken').value.trim();if(t)localStorage.setItem(TOKEN_KEY,t);updateTokenStatus()});
+$('#settingsClearTokenBtn').addEventListener('click',()=>{localStorage.removeItem(TOKEN_KEY);$('#settingsGithubToken').value='';updateTokenStatus()});
 $('#masterLoginBtn').addEventListener('click',masterLogin);
 $('#masterPassword').addEventListener('keydown',e=>{if(e.key==='Enter')masterLogin()});
 $('#masterLogoutBtn').addEventListener('click',masterLogout);
-$('#saveTokenBtn').addEventListener('click',()=>{const t=$('#githubToken').value.trim();if(t)localStorage.setItem(TOKEN_KEY,t);updateTokenStatus()});
-$('#clearTokenBtn').addEventListener('click',()=>{localStorage.removeItem(TOKEN_KEY);$('#githubToken').value='';updateTokenStatus()});
 $('#loadDayBtn').addEventListener('click',loadDayToForm);
 $('#saveEntryBtn').addEventListener('click',saveEntry);
 $('#startQrBtn').addEventListener('click',startQr);

@@ -270,3 +270,9 @@ main{max-width:1500px;margin:auto;padding:20px 24px 100px}
  .rates-head span:first-child{display:none}
  .rate-row strong{grid-column:1/-1}
 }
+
+/* UPDATE 6 — MASTER / SETTINGS SEPARATION */
+.settings-area{max-width:1200px;margin:0 auto}
+.settings-token{margin-bottom:14px}
+.settings-note{padding:0 16px 14px}
+@media(max-width:700px){.bottom-nav{grid-template-columns:repeat(4,1fr)}}

@@ -3755,8 +3755,21 @@
       "co-p": 0,
       "po-g": 0,
       "po-p": 0,
-      "conti": 0,
-      "aggiornato": "2026-09-04T22:06:08.580Z"
+      "conti": 2,
+      "simpRaw": {
+        "sport": {
+          "emessi": 5135.45,
+          "annulli": 0,
+          "pagati": 4212.14,
+          "rimborsati": 0
+        },
+        "virtual": {
+          "emessi": 778.5,
+          "annulli": 0,
+          "pagati": 701.53,
+          "rimborsati": 0
+        }
+      }
     },
     {
       "data": "2026-09-05",

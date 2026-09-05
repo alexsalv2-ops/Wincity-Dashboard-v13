@@ -223,6 +223,31 @@ const GH_REPO='alexsalv2-ops/Wincity-Dashboard-v13';
 const GH_FILE='data.json';
 const PENDING_QR_KEY='wincity_v13_pending_qr_persist';
 let qrScanner=null;
+let githubTokenMemory='';
+function getGithubToken(){
+  let token='';
+  try{ token=(localStorage.getItem(TOKEN_KEY)||'').trim(); }catch(e){}
+  if(!token && githubTokenMemory) token=githubTokenMemory.trim();
+  const field=$('#settingsGithubToken');
+  if(!token && field && field.value) token=field.value.trim();
+  if(token){
+    githubTokenMemory=token;
+    try{ if(localStorage.getItem(TOKEN_KEY)!==token) localStorage.setItem(TOKEN_KEY,token); }catch(e){}
+  }
+  return token;
+}
+function saveGithubToken(token){
+  token=(token||'').trim();
+  if(!token) return false;
+  githubTokenMemory=token;
+  try{ localStorage.setItem(TOKEN_KEY,token); }catch(e){}
+  return !!getGithubToken();
+}
+function clearGithubToken(){
+  githubTokenMemory='';
+  try{ localStorage.removeItem(TOKEN_KEY); }catch(e){}
+}
+
 
 function isMaster(){return sessionStorage.getItem('wincity_v13_master')==='1'}
 function renderMasterState(){
@@ -236,7 +261,7 @@ function renderMasterState(){
   }
 }
 function updateTokenStatus(){
-  const ok=!!localStorage.getItem(TOKEN_KEY);
+  const ok=!!getGithubToken();
   if($('#settingsTokenStatus')){
     $('#settingsTokenStatus').textContent=ok?'Token salvato':'Token non impostato';
     $('#settingsTokenStatus').className='pill '+(ok?'positive':'');
@@ -247,7 +272,7 @@ function renderSettingsState(){
   $('#settingsLocked').hidden=unlocked;
   $('#settingsUnlocked').hidden=!unlocked;
   if(unlocked){
-    $('#settingsGithubToken').value=localStorage.getItem(TOKEN_KEY)||'';
+    $('#settingsGithubToken').value=getGithubToken();
     updateTokenStatus(); loadRateFields();
   }
 }
@@ -320,8 +345,8 @@ function loadDayToForm(){
   $('#saveStatus').textContent='Giornata caricata. Le modifiche sovrascriveranno questa data.';
 }
 async function pushDataToGithub(nextDb){
-  const token=localStorage.getItem(TOKEN_KEY);
-  if(!token) throw new Error('Inserisci prima il token GitHub nell’area Master.');
+  const token=getGithubToken();
+  if(!token) throw new Error('Token GitHub non disponibile in questa sessione. Apri Impostazioni e premi Salva sul dispositivo.');
   const api=`https://api.github.com/repos/${GH_REPO}/contents/${GH_FILE}`;
   const headers={'Accept':'application/vnd.github+json','Authorization':`Bearer ${token}`,'X-GitHub-Api-Version':'2022-11-28'};
   const get=await fetch(api,{headers,cache:'no-store'});
@@ -369,8 +394,8 @@ function loadRateFields(){
   map.forEach(([id,key,def])=>{$('#'+id).value=rateText(db.settings[key]===undefined?def:db.settings[key])});
 }
 async function pushWholeDb(nextDb,message){
-  const token=localStorage.getItem(TOKEN_KEY);
-  if(!token) throw new Error('Inserisci prima il token GitHub nell’area Master.');
+  const token=getGithubToken();
+  if(!token) throw new Error('Token GitHub non disponibile in questa sessione. Apri Impostazioni e premi Salva sul dispositivo.');
   const api=`https://api.github.com/repos/${GH_REPO}/contents/${GH_FILE}`;
   const headers={'Accept':'application/vnd.github+json','Authorization':`Bearer ${token}`,'X-GitHub-Api-Version':'2022-11-28'};
   const get=await fetch(api,{headers,cache:'no-store'});
@@ -512,8 +537,8 @@ $('#importBackupBtn').addEventListener('click',importBackup);
 $('#settingsLoginBtn').addEventListener('click',settingsLogin);
 $('#settingsPassword').addEventListener('keydown',e=>{if(e.key==='Enter')settingsLogin()});
 $('#settingsLogoutBtn').addEventListener('click',settingsLogout);
-$('#settingsSaveTokenBtn').addEventListener('click',()=>{const t=$('#settingsGithubToken').value.trim();if(t)localStorage.setItem(TOKEN_KEY,t);updateTokenStatus()});
-$('#settingsClearTokenBtn').addEventListener('click',()=>{localStorage.removeItem(TOKEN_KEY);$('#settingsGithubToken').value='';updateTokenStatus()});
+$('#settingsSaveTokenBtn').addEventListener('click',()=>{const t=$('#settingsGithubToken').value.trim();if(saveGithubToken(t)){updateTokenStatus();}else{alert('Inserisci un token GitHub valido prima di salvarlo.')}});
+$('#settingsClearTokenBtn').addEventListener('click',()=>{clearGithubToken();$('#settingsGithubToken').value='';updateTokenStatus()});
 $('#masterLoginBtn').addEventListener('click',masterLogin);
 $('#masterPassword').addEventListener('keydown',e=>{if(e.key==='Enter')masterLogin()});
 $('#masterLogoutBtn').addEventListener('click',masterLogout);

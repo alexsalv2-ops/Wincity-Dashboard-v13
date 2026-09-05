@@ -3306,10 +3306,10 @@
     },
     {
       "data": "2026-09-05",
-      "sp-g": 3541.95,
+      "sp-g": 3615.45,
       "sp-p": 2956.62,
-      "vt-g": 1379.8,
-      "vt-p": 849.2,
+      "vt-g": 1414.3,
+      "vt-p": 894.91,
       "aw-g": 0,
       "aw-p": 0,
       "so-g": 0,
@@ -3323,15 +3323,15 @@
       "conti": 0,
       "simpRaw": {
         "sport": {
-          "emessi": 3541.95,
+          "emessi": 3615.45,
           "annulli": 0,
           "pagati": 2956.62,
           "rimborsati": 0
         },
         "virtual": {
-          "emessi": 1379.8,
+          "emessi": 1414.3,
           "annulli": 0,
-          "pagati": 849.2,
+          "pagati": 894.91,
           "rimborsati": 0
         }
       }

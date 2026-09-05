@@ -192,8 +192,8 @@ function renderHistory(){
   const total=aggregate(rs),online=onlineTotal(total);
   $('#historyList').innerHTML=`<div class="history-summary">
     <div><span>Periodo</span><strong>${monthLabel(month)}</strong></div><div><span>Giornate</span><strong>${rs.length}</strong></div>
-    <div><span>Sport · Netto</span><strong class="${tone(total.cats.sp.netto,'netto')}">${eur(total.cats.sp.netto)}</strong></div>
-    <div><span>Virtual · Netto</span><strong class="${tone(total.cats.vt.netto,'netto')}">${eur(total.cats.vt.netto)}</strong></div>
+    <div><span>Sport · Giocato</span><strong class="neutral-value">${eur(total.cats.sp.g)}</strong></div>
+    <div><span>Virtual · Giocato</span><strong class="neutral-value">${eur(total.cats.vt.g)}</strong></div>
   </div>`+rs.map(r=>{
     const a=aggregate([r]),on=onlineTotal(a);
     return `<article class="history-card"><div class="history-head"><strong>${dmy(r.data)}</strong><span>${num(r.conti)} conti aperti</span></div>

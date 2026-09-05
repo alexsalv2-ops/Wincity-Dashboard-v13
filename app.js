@@ -206,10 +206,181 @@ function renderHistory(){
   }).join('');
 }
 function switchView(view){
-  $$('.view').forEach(v=>v.classList.toggle('active',v.id===(view==='dashboard'?'dashboardView':'historyView')));
+  const id=view==='dashboard'?'dashboardView':view==='history'?'historyView':'masterView';
+  $$('.view').forEach(v=>v.classList.toggle('active',v.id===id));
   $$('[data-view]').forEach(b=>b.classList.toggle('active',b.dataset.view===view));
   if(view==='history')renderHistory();
+  if(view==='master')renderMasterState();
 }
+
+
+/* ===== MASTER v13 ===== */
+const MASTER_PASSWORD='WincityMaster';
+const TOKEN_KEY='wincity_v13_gh_token';
+const GH_REPO='alexsalv2-ops/Wincity-Dashboard-v13';
+const GH_FILE='data.json';
+let qrScanner=null;
+
+function isMaster(){return sessionStorage.getItem('wincity_v13_master')==='1'}
+function renderMasterState(){
+  const unlocked=isMaster();
+  $('#masterLocked').hidden=unlocked;
+  $('#masterUnlocked').hidden=!unlocked;
+  if(unlocked){
+    const token=localStorage.getItem(TOKEN_KEY)||'';
+    $('#githubToken').value=token;
+    updateTokenStatus();
+    if(!$('#entryDate').value) $('#entryDate').value=latestDate();
+    updateRawPreview();
+  }
+}
+function updateTokenStatus(){
+  const ok=!!localStorage.getItem(TOKEN_KEY);
+  $('#tokenStatus').textContent=ok?'Token salvato':'Token non impostato';
+  $('#tokenStatus').className='pill '+(ok?'positive':'');
+}
+function masterLogin(){
+  if($('#masterPassword').value===MASTER_PASSWORD){
+    sessionStorage.setItem('wincity_v13_master','1');
+    $('#masterPassword').value='';
+    renderMasterState();
+  }else alert('Password Master non corretta.');
+}
+function masterLogout(){
+  sessionStorage.removeItem('wincity_v13_master');
+  stopQr();
+  renderMasterState();
+}
+function val(id){return num($('#'+id)?.value)}
+function setVal(id,v){const el=$('#'+id);if(el)el.value=(Number(v)||0).toFixed(2).replace('.',',')}
+function updateRawPreview(){
+  const spG=val('spEmessi')-val('spAnnulli'), spP=val('spPagati')+val('spRimborsati');
+  const vtG=val('vtEmessi')-val('vtAnnulli'), vtP=val('vtPagati')+val('vtRimborsati');
+  $('#spNetPlayed').textContent=eur(spG); $('#spNetPaid').textContent=eur(spP);
+  $('#vtNetPlayed').textContent=eur(vtG); $('#vtNetPaid').textContent=eur(vtP);
+}
+function recordFromForm(){
+  const date=$('#entryDate').value;
+  if(!date) throw new Error('Seleziona una data.');
+  const spRaw={emessi:val('spEmessi'),annulli:val('spAnnulli'),pagati:val('spPagati'),rimborsati:val('spRimborsati')};
+  const vtRaw={emessi:val('vtEmessi'),annulli:val('vtAnnulli'),pagati:val('vtPagati'),rimborsati:val('vtRimborsati')};
+  return {
+    data:date,
+    'sp-g':spRaw.emessi-spRaw.annulli,'sp-p':spRaw.pagati+spRaw.rimborsati,
+    'vt-g':vtRaw.emessi-vtRaw.annulli,'vt-p':vtRaw.pagati+vtRaw.rimborsati,
+    'aw-g':val('awG'),'aw-p':val('awP'),
+    'so-g':val('soG'),'so-p':val('soP'),'vo-g':val('voG'),'vo-p':val('voP'),
+    'co-g':val('coG'),'co-p':val('coP'),'po-g':val('poG'),'po-p':val('poP'),
+    conti:Math.max(0,Math.round(val('contiInput'))),
+    simpRaw:{sport:spRaw,virtual:vtRaw}
+  };
+}
+function clearEntry(){
+  ['spEmessi','spAnnulli','spPagati','spRimborsati','vtEmessi','vtAnnulli','vtPagati','vtRimborsati',
+   'awG','awP','soG','soP','voG','voP','coG','coP','poG','poP'].forEach(id=>setVal(id,0));
+  $('#contiInput').value=0; updateRawPreview();
+}
+function loadDayToForm(){
+  const date=$('#entryDate').value;
+  const r=db.records.find(x=>x.data===date);
+  if(!r){clearEntry();$('#saveStatus').textContent='Giornata non presente: pronto per nuovo inserimento.';return}
+  const sr=r.simpRaw?.sport||{emessi:num(r['sp-g']),annulli:0,pagati:num(r['sp-p']),rimborsati:0};
+  const vr=r.simpRaw?.virtual||{emessi:num(r['vt-g']),annulli:0,pagati:num(r['vt-p']),rimborsati:0};
+  setVal('spEmessi',sr.emessi);setVal('spAnnulli',sr.annulli);setVal('spPagati',sr.pagati);setVal('spRimborsati',sr.rimborsati);
+  setVal('vtEmessi',vr.emessi);setVal('vtAnnulli',vr.annulli);setVal('vtPagati',vr.pagati);setVal('vtRimborsati',vr.rimborsati);
+  [['awG','aw-g'],['awP','aw-p'],['soG','so-g'],['soP','so-p'],['voG','vo-g'],['voP','vo-p'],
+   ['coG','co-g'],['coP','co-p'],['poG','po-g'],['poP','po-p']].forEach(([id,k])=>setVal(id,r[k]));
+  $('#contiInput').value=num(r.conti);updateRawPreview();
+  $('#saveStatus').textContent='Giornata caricata. Le modifiche sovrascriveranno questa data.';
+}
+async function pushDataToGithub(nextDb){
+  const token=localStorage.getItem(TOKEN_KEY);
+  if(!token) throw new Error('Inserisci prima il token GitHub nell’area Master.');
+  const api=`https://api.github.com/repos/${GH_REPO}/contents/${GH_FILE}`;
+  const headers={'Accept':'application/vnd.github+json','Authorization':`Bearer ${token}`,'X-GitHub-Api-Version':'2022-11-28'};
+  const get=await fetch(api,{headers,cache:'no-store'});
+  if(!get.ok) throw new Error(`GitHub GET ${get.status}`);
+  const info=await get.json();
+  const content=btoa(unescape(encodeURIComponent(JSON.stringify(nextDb,null,2))));
+  const put=await fetch(api,{method:'PUT',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify({
+    message:`Dashboard: aggiorna ${$('#entryDate').value}`,
+    content,sha:info.sha
+  })});
+  if(!put.ok){
+    let msg=''; try{msg=(await put.json()).message||''}catch{}
+    throw new Error(`GitHub PUT ${put.status}${msg?': '+msg:''}`);
+  }
+}
+async function saveEntry(){
+  if(!isMaster()) return;
+  try{
+    const rec=recordFromForm(), idx=db.records.findIndex(r=>r.data===rec.data);
+    if(idx>=0 && !confirm(`La giornata ${dmy(rec.data)} esiste già. Vuoi sovrascriverla?`)) return;
+    const nextDb=JSON.parse(JSON.stringify(db));
+    const ni=nextDb.records.findIndex(r=>r.data===rec.data);
+    if(ni>=0) nextDb.records[ni]=rec; else nextDb.records.push(rec);
+    nextDb.records.sort((a,b)=>a.data.localeCompare(b.data));
+    $('#saveEntryBtn').disabled=true; $('#saveStatus').textContent='Salvataggio su GitHub...';
+    await pushDataToGithub(nextDb);
+    db=nextDb; currentMonth=rec.data.slice(0,7);
+    $('#saveStatus').textContent='Salvato ✓';
+    renderDashboard(); if($('#historyView').classList.contains('active'))renderHistory();
+  }catch(e){console.error(e);$('#saveStatus').textContent='Errore: '+e.message}
+  finally{$('#saveEntryBtn').disabled=false}
+}
+function parseQrPayload(payload){
+  const parts=String(payload||'').trim().split('|');
+  if(parts.length!==10 || parts[0]!=='S1') throw new Error('QR non riconosciuto.');
+  if(!/^\d{8}$/.test(parts[1])) throw new Error('Data QR non valida.');
+  const c=parts.slice(2).map(x=>Number(x));
+  if(c.some(x=>!Number.isFinite(x))) throw new Error('Valori QR non validi.');
+  const d=parts[1],date=`${d.slice(0,4)}-${d.slice(4,6)}-${d.slice(6,8)}`;
+  return {date,sp:{emessi:c[0]/100,annulli:c[1]/100,pagati:c[2]/100,rimborsati:c[3]/100},
+    vt:{emessi:c[4]/100,annulli:c[5]/100,pagati:c[6]/100,rimborsati:c[7]/100}};
+}
+function applyQrPayload(payload){
+  try{
+    const q=parseQrPayload(payload);
+    $('#entryDate').value=q.date;
+    setVal('spEmessi',q.sp.emessi);setVal('spAnnulli',q.sp.annulli);setVal('spPagati',q.sp.pagati);setVal('spRimborsati',q.sp.rimborsati);
+    setVal('vtEmessi',q.vt.emessi);setVal('vtAnnulli',q.vt.annulli);setVal('vtPagati',q.vt.pagati);setVal('vtRimborsati',q.vt.rimborsati);
+    updateRawPreview(); $('#qrPayload').value=payload;
+    $('#qrStatus').textContent=`QR importato: ${dmy(q.date)}. Controlla i valori e premi Salva giornata.`;
+    stopQr();
+  }catch(e){$('#qrStatus').textContent='Errore QR: '+e.message}
+}
+async function startQr(){
+  if(typeof Html5Qrcode==='undefined'){ $('#qrStatus').textContent='Libreria QR non disponibile. Puoi incollare il contenuto manualmente.'; return }
+  try{
+    qrScanner=new Html5Qrcode('qrReader');
+    const cams=await Html5Qrcode.getCameras();
+    if(!cams.length) throw new Error('Nessuna fotocamera disponibile.');
+    const back=cams.find(c=>/back|rear|environment/i.test(c.label))||cams[cams.length-1];
+    await qrScanner.start(back.id,{fps:10,qrbox:{width:250,height:250}},txt=>applyQrPayload(txt),()=>{});
+    $('#startQrBtn').disabled=true;$('#stopQrBtn').disabled=false;$('#qrStatus').textContent='Fotocamera attiva. Inquadra il QR SIMP.';
+  }catch(e){$('#qrStatus').textContent='Fotocamera: '+e.message;qrScanner=null}
+}
+async function stopQr(){
+  if(qrScanner){
+    try{await qrScanner.stop()}catch{}
+    try{await qrScanner.clear()}catch{}
+    qrScanner=null;
+  }
+  if($('#startQrBtn')){$('#startQrBtn').disabled=false;$('#stopQrBtn').disabled=true}
+}
+
+$('#masterLoginBtn').addEventListener('click',masterLogin);
+$('#masterPassword').addEventListener('keydown',e=>{if(e.key==='Enter')masterLogin()});
+$('#masterLogoutBtn').addEventListener('click',masterLogout);
+$('#saveTokenBtn').addEventListener('click',()=>{const t=$('#githubToken').value.trim();if(t)localStorage.setItem(TOKEN_KEY,t);updateTokenStatus()});
+$('#clearTokenBtn').addEventListener('click',()=>{localStorage.removeItem(TOKEN_KEY);$('#githubToken').value='';updateTokenStatus()});
+$('#loadDayBtn').addEventListener('click',loadDayToForm);
+$('#saveEntryBtn').addEventListener('click',saveEntry);
+$('#startQrBtn').addEventListener('click',startQr);
+$('#stopQrBtn').addEventListener('click',stopQr);
+$('#applyQrBtn').addEventListener('click',()=>applyQrPayload($('#qrPayload').value));
+['spEmessi','spAnnulli','spPagati','spRimborsati','vtEmessi','vtAnnulli','vtPagati','vtRimborsati'].forEach(id=>$('#'+id).addEventListener('input',updateRawPreview));
+
 async function loadData(){
   const res=await fetch('./data.json?ts='+Date.now(),{cache:'no-store'});
   if(!res.ok)throw new Error('Impossibile caricare data.json');

@@ -5,7 +5,8 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#c90f22">
   <title>Wincity Trani Dashboard</title>
-  <link rel="stylesheet" href="styles.css?v=1303">
+  <link rel="stylesheet" href="styles.css?v=1304">
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 </head>
 <body>
   <header class="hero">
@@ -21,6 +22,7 @@
   <nav class="main-nav">
     <button class="active" data-view="dashboard">⌂ Dashboard</button>
     <button data-view="history">◉ Storico</button>
+    <button id="masterNavBtn" data-view="master">🔒 Master</button>
   </nav>
 
   <main>
@@ -116,14 +118,133 @@
       </div>
       <div id="historyList"></div>
     </section>
-  </main>
+  
+    <section id="masterView" class="view">
+      <div id="masterLocked" class="master-lock panel">
+        <div class="lock-icon">🔒</div>
+        <div>
+          <span class="eyebrow">Area riservata</span>
+          <h2>Accesso Master</h2>
+          <p>Inserimento e modifica dei dati della Dashboard.</p>
+        </div>
+        <div class="login-row">
+          <input id="masterPassword" type="password" placeholder="Password Master" autocomplete="current-password">
+          <button id="masterLoginBtn" class="primary-btn">Accedi</button>
+        </div>
+        <p class="master-note">La password protegge l'interfaccia. Le modifiche su GitHub richiedono anche il token personale salvato solo su questo dispositivo.</p>
+      </div>
+
+      <div id="masterUnlocked" class="master-area" hidden>
+        <div class="section-title">
+          <div>
+            <span class="eyebrow">Area Master</span>
+            <h2>Gestione dati</h2>
+            <p>Inserimento manuale, QR SIMP e modifica delle giornate esistenti.</p>
+          </div>
+          <button id="masterLogoutBtn" class="secondary-btn">Esci</button>
+        </div>
+
+        <section class="panel master-token">
+          <div class="panel-head"><h2>Connessione GitHub</h2><span id="tokenStatus" class="pill">Token non impostato</span></div>
+          <div class="token-row">
+            <input id="githubToken" type="password" placeholder="GitHub fine-grained token">
+            <button id="saveTokenBtn" class="secondary-btn">Salva sul dispositivo</button>
+            <button id="clearTokenBtn" class="ghost-btn">Rimuovi</button>
+          </div>
+          <p class="master-note">Repository: alexsalv2-ops/Wincity-Dashboard-v13 · file: data.json</p>
+        </section>
+
+        <div class="master-grid">
+          <section class="panel master-entry">
+            <div class="panel-head">
+              <div><h2>Nuova giornata / Modifica</h2><p>Se la data esiste, puoi caricarla e sovrascriverla.</p></div>
+              <button id="loadDayBtn" class="secondary-btn">Carica giornata</button>
+            </div>
+
+            <div class="entry-body">
+              <label class="field-label">Data
+                <input id="entryDate" type="date">
+              </label>
+
+              <div class="entry-groups">
+                <fieldset class="entry-group sport-group">
+                  <legend>Sport Agenzia · SIMP</legend>
+                  <div class="four-fields">
+                    <label>Emessi<input id="spEmessi" inputmode="decimal" placeholder="0,00"></label>
+                    <label>Annulli<input id="spAnnulli" inputmode="decimal" placeholder="0,00"></label>
+                    <label>Pagati<input id="spPagati" inputmode="decimal" placeholder="0,00"></label>
+                    <label>Rimborsati<input id="spRimborsati" inputmode="decimal" placeholder="0,00"></label>
+                  </div>
+                  <div class="calc-preview"><span>Giocato netto <b id="spNetPlayed">€0,00</b></span><span>Pagato netto <b id="spNetPaid">€0,00</b></span></div>
+                </fieldset>
+
+                <fieldset class="entry-group virtual-group">
+                  <legend>Virtual Agenzia · SIMP</legend>
+                  <div class="four-fields">
+                    <label>Emessi<input id="vtEmessi" inputmode="decimal" placeholder="0,00"></label>
+                    <label>Annulli<input id="vtAnnulli" inputmode="decimal" placeholder="0,00"></label>
+                    <label>Pagati<input id="vtPagati" inputmode="decimal" placeholder="0,00"></label>
+                    <label>Rimborsati<input id="vtRimborsati" inputmode="decimal" placeholder="0,00"></label>
+                  </div>
+                  <div class="calc-preview"><span>Giocato netto <b id="vtNetPlayed">€0,00</b></span><span>Pagato netto <b id="vtNetPaid">€0,00</b></span></div>
+                </fieldset>
+
+                <fieldset class="entry-group">
+                  <legend>VLT</legend>
+                  <div class="two-fields">
+                    <label>Incassati<input id="awG" inputmode="decimal" placeholder="0,00"></label>
+                    <label>Pagati<input id="awP" inputmode="decimal" placeholder="0,00"></label>
+                  </div>
+                </fieldset>
+
+                <fieldset class="entry-group">
+                  <legend>Online</legend>
+                  <div class="online-entry-grid">
+                    <div><strong>Sport Online</strong><label>Giocato<input id="soG" inputmode="decimal"></label><label>Pagato<input id="soP" inputmode="decimal"></label></div>
+                    <div><strong>Virtual Online</strong><label>Giocato<input id="voG" inputmode="decimal"></label><label>Pagato<input id="voP" inputmode="decimal"></label></div>
+                    <div><strong>Casinò Online</strong><label>Giocato<input id="coG" inputmode="decimal"></label><label>Pagato<input id="coP" inputmode="decimal"></label></div>
+                    <div><strong>Poker Online</strong><label>Giocato<input id="poG" inputmode="decimal"></label><label>Pagato<input id="poP" inputmode="decimal"></label></div>
+                  </div>
+                </fieldset>
+
+                <label class="field-label">Conti gioco aperti
+                  <input id="contiInput" type="number" min="0" step="1" value="0">
+                </label>
+              </div>
+
+              <div class="save-row">
+                <button id="saveEntryBtn" class="primary-btn">Salva giornata su GitHub</button>
+                <span id="saveStatus"></span>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel qr-panel">
+            <div class="panel-head"><div><h2>Inserimento QR SIMP</h2><p>Scansiona il QR generato sul PC SIMP.</p></div></div>
+            <div class="qr-body">
+              <button id="startQrBtn" class="primary-btn">Avvia fotocamera</button>
+              <button id="stopQrBtn" class="secondary-btn" disabled>Ferma</button>
+              <div id="qrReader"></div>
+              <label class="field-label">Oppure incolla il contenuto QR
+                <textarea id="qrPayload" rows="4" placeholder="S1|YYYYMMDD|..."></textarea>
+              </label>
+              <button id="applyQrBtn" class="secondary-btn">Importa QR nei campi</button>
+              <div id="qrStatus" class="master-note"></div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </section>
+
+</main>
 
   <nav class="bottom-nav">
     <button class="active" data-view="dashboard">⌂<span>Dashboard</span></button>
     <button data-view="history">☰<span>Storico</span></button>
+    <button id="masterBottomBtn" data-view="master">🔒<span>Master</span></button>
   </nav>
 
   <div id="toast" class="toast"></div>
-  <script src="app.js?v=1303"></script>
+  <script src="app.js?v=1304"></script>
 </body>
 </html>

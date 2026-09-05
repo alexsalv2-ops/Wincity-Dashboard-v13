@@ -3203,29 +3203,16 @@
       "vt-p": 222.25,
       "aw-g": 55,
       "aw-p": 40,
-      "so-g": 136,
+      "so-g": 0,
       "so-p": 0,
-      "vo-g": 66.5,
-      "vo-p": 48.76,
-      "co-g": 814.32,
-      "co-p": 726.98,
-      "po-g": 2,
-      "po-p": 0.84,
+      "vo-g": 0,
+      "vo-p": 0,
+      "co-g": 0,
+      "co-p": 0,
+      "po-g": 0,
+      "po-p": 0,
       "conti": 1,
-      "simpRaw": {
-        "sport": {
-          "emessi": 3482.5,
-          "annulli": 0,
-          "pagati": 3828.17,
-          "rimborsati": 0
-        },
-        "virtual": {
-          "emessi": 357.25,
-          "annulli": 0,
-          "pagati": 222.25,
-          "rimborsati": 0
-        }
-      }
+      "aggiornato": "2026-08-18T22:09:36.498Z"
     },
     {
       "data": "2026-08-19",
@@ -3235,16 +3222,29 @@
       "vt-p": 987.36,
       "aw-g": 0,
       "aw-p": 0,
-      "so-g": 0,
-      "so-p": 0,
-      "vo-g": 0,
-      "vo-p": 0,
-      "co-g": 0,
-      "co-p": 0,
-      "po-g": 0,
-      "po-p": 0,
+      "so-g": 228.15,
+      "so-p": 718.37,
+      "vo-g": 67.5,
+      "vo-p": 63.4,
+      "co-g": 1471.87,
+      "co-p": 1438.2,
+      "po-g": 107,
+      "po-p": 77.17,
       "conti": 0,
-      "aggiornato": "2026-08-20T08:09:39.196Z"
+      "simpRaw": {
+        "sport": {
+          "emessi": 3874.5,
+          "annulli": 0,
+          "pagati": 2660.4,
+          "rimborsati": 0
+        },
+        "virtual": {
+          "emessi": 1131.35,
+          "annulli": 0,
+          "pagati": 987.36,
+          "rimborsati": 0
+        }
+      }
     },
     {
       "data": "2026-08-20",

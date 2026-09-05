@@ -3,13 +3,13 @@ let db={records:[],settings:{}};
 let currentMonth=new Date().toISOString().slice(0,7);
 
 const defs={
-  sp:{g:'sp-g',p:'sp-p',mode:'lordo',pct:50,tax:'tSp'},
-  vt:{g:'vt-g',p:'vt-p',mode:'raccolta',pct:4.5,tax:'tVt'},
-  aw:{g:'aw-g',p:'aw-p',mode:'raccolta',pct:5.5,tax:'tAw'},
-  so:{g:'so-g',p:'so-p',mode:'lordo',pct:50,tax:'tSo'},
-  vo:{g:'vo-g',p:'vo-p',mode:'raccolta',pct:4.5,tax:'tVo'},
-  co:{g:'co-g',p:'co-p',mode:'lordo',pct:50,tax:'tCo'},
-  po:{g:'po-g',p:'po-p',mode:'lordo',pct:50,tax:'tPo'}
+  sp:{g:'sp-g',p:'sp-p',mode:'lordo',pct:50,pctKey:'aSp',tax:'tSp'},
+  vt:{g:'vt-g',p:'vt-p',mode:'raccolta',pct:4.5,pctKey:'aVt',tax:'tVt'},
+  aw:{g:'aw-g',p:'aw-p',mode:'raccolta',pct:5.5,pctKey:'aAw',tax:'tAw'},
+  so:{g:'so-g',p:'so-p',mode:'lordo',pct:50,pctKey:'aSo',tax:'tSo'},
+  vo:{g:'vo-g',p:'vo-p',mode:'raccolta',pct:4.5,pctKey:'aVo',tax:'tVo'},
+  co:{g:'co-g',p:'co-p',mode:'lordo',pct:50,pctKey:'aCo',tax:'tCo'},
+  po:{g:'po-g',p:'po-p',mode:'lordo',pct:50,pctKey:'aPo',tax:'tPo'}
 };
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const num=v=>{
@@ -28,7 +28,8 @@ const tone=(v,kind)=>v<0?'negative':kind==='netto'&&v>0?'positive':kind==='lordo
 function calc(g,p,d){
   g=num(g); p=num(p);
   const lordo=g-p;
-  const aggio=d.mode==='lordo'?lordo*(d.pct/100):g*(d.pct/100);
+  const pct=db.settings[d.pctKey]===undefined?d.pct:num(db.settings[d.pctKey]);
+  const aggio=d.mode==='lordo'?lordo*(pct/100):g*(pct/100);
   const taxes=aggio*(num(db.settings[d.tax])/100);
   return {g,p,lordo,netto:aggio-taxes};
 }
@@ -230,6 +231,7 @@ function renderMasterState(){
     const token=localStorage.getItem(TOKEN_KEY)||'';
     $('#githubToken').value=token;
     updateTokenStatus();
+    loadRateFields();
     if(!$('#entryDate').value) $('#entryDate').value=latestDate();
     updateRawPreview();
   }
@@ -328,6 +330,89 @@ async function saveEntry(){
   }catch(e){console.error(e);$('#saveStatus').textContent='Errore: '+e.message}
   finally{$('#saveEntryBtn').disabled=false}
 }
+
+function rateText(v){return Number(v??0).toLocaleString('it-IT',{minimumFractionDigits:0,maximumFractionDigits:2})}
+function loadRateFields(){
+  const map=[
+    ['rateSpAggio','aSp',50],['rateSpTax','tSp',20.5],
+    ['rateVtAggio','aVt',4.5],['rateVtTax','tVt',24.5],
+    ['rateAwAggio','aAw',5.5],['rateAwTax','tAw',20.5],
+    ['rateSoAggio','aSo',50],['rateSoTax','tSo',24.5],
+    ['rateVoAggio','aVo',4.5],['rateVoTax','tVo',24.5],
+    ['rateCoAggio','aCo',50],['rateCoTax','tCo',24.5],
+    ['ratePoAggio','aPo',50],['ratePoTax','tPo',20]
+  ];
+  map.forEach(([id,key,def])=>{$('#'+id).value=rateText(db.settings[key]===undefined?def:db.settings[key])});
+}
+async function pushWholeDb(nextDb,message){
+  const token=localStorage.getItem(TOKEN_KEY);
+  if(!token) throw new Error('Inserisci prima il token GitHub nell’area Master.');
+  const api=`https://api.github.com/repos/${GH_REPO}/contents/${GH_FILE}`;
+  const headers={'Accept':'application/vnd.github+json','Authorization':`Bearer ${token}`,'X-GitHub-Api-Version':'2022-11-28'};
+  const get=await fetch(api,{headers,cache:'no-store'});
+  if(!get.ok) throw new Error(`GitHub GET ${get.status}`);
+  const info=await get.json();
+  const content=btoa(unescape(encodeURIComponent(JSON.stringify(nextDb,null,2))));
+  const put=await fetch(api,{method:'PUT',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify({message,content,sha:info.sha})});
+  if(!put.ok){let msg='';try{msg=(await put.json()).message||''}catch{};throw new Error(`GitHub PUT ${put.status}${msg?': '+msg:''}`)}
+}
+async function saveRates(){
+  if(!isMaster())return;
+  const pairs=[
+    ['aSp','rateSpAggio'],['tSp','rateSpTax'],['aVt','rateVtAggio'],['tVt','rateVtTax'],
+    ['aAw','rateAwAggio'],['tAw','rateAwTax'],['aSo','rateSoAggio'],['tSo','rateSoTax'],
+    ['aVo','rateVoAggio'],['tVo','rateVoTax'],['aCo','rateCoAggio'],['tCo','rateCoTax'],
+    ['aPo','ratePoAggio'],['tPo','ratePoTax']
+  ];
+  try{
+    const next=JSON.parse(JSON.stringify(db));
+    next.settings=next.settings||{};
+    for(const [key,id] of pairs){
+      const v=num($('#'+id).value);
+      if(v<0||v>100)throw new Error('Le percentuali devono essere comprese tra 0 e 100.');
+      next.settings[key]=v;
+    }
+    if(!confirm('Salvare le nuove aliquote? Dashboard e Storico verranno ricalcolati con questi valori.'))return;
+    $('#saveRatesBtn').disabled=true;$('#ratesStatus').textContent='Salvataggio...';
+    await pushWholeDb(next,'Dashboard: aggiorna aliquote');
+    db=next;renderDashboard();renderHistory();$('#ratesStatus').textContent='Aliquote salvate ✓';
+  }catch(e){$('#ratesStatus').textContent='Errore: '+e.message}
+  finally{$('#saveRatesBtn').disabled=false}
+}
+function downloadJson(obj,name){
+  const blob=new Blob([JSON.stringify(obj,null,2)],{type:'application/json'});
+  const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+function exportBackup(){
+  const stamp=new Date().toISOString().replace(/[:.]/g,'-');
+  downloadJson(db,`wincity-v13-backup-${stamp}.json`);
+  $('#backupStatus').textContent='Backup esportato.';
+}
+function validateBackup(x){
+  if(!x||typeof x!=='object'||!Array.isArray(x.records)||!x.settings||typeof x.settings!=='object')throw new Error('Backup non valido: servono records e settings.');
+  for(const r of x.records){if(!r||typeof r.data!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(r.data))throw new Error('Backup non valido: record con data errata.')}
+  return true;
+}
+async function importBackup(){
+  if(!isMaster())return;
+  const file=$('#importBackupFile').files?.[0];
+  if(!file){$('#backupStatus').textContent='Seleziona prima un file JSON.';return}
+  try{
+    const imported=JSON.parse(await file.text());validateBackup(imported);
+    // Safety: automatically export current DB BEFORE destructive restore.
+    const stamp=new Date().toISOString().replace(/[:.]/g,'-');
+    downloadJson(db,`wincity-v13-pre-restore-${stamp}.json`);
+    if(!confirm(`Ripristinare il backup con ${imported.records.length} giornate? Il database attuale è stato appena esportato automaticamente.`))return;
+    $('#importBackupBtn').disabled=true;$('#backupStatus').textContent='Ripristino su GitHub...';
+    imported.records.sort((a,b)=>a.data.localeCompare(b.data));
+    await pushWholeDb(imported,'Dashboard: ripristino backup database');
+    db=imported;currentMonth=db.records.length?db.records.at(-1).data.slice(0,7):currentMonth;
+    renderDashboard();renderHistory();loadRateFields();
+    $('#backupStatus').textContent='Backup ripristinato ✓';
+  }catch(e){$('#backupStatus').textContent='Errore: '+e.message}
+  finally{$('#importBackupBtn').disabled=false}
+}
+
 function parseQrPayload(payload){
   const parts=String(payload||'').trim().split('|');
   if(parts.length!==10 || parts[0]!=='S1') throw new Error('QR non riconosciuto.');
@@ -369,6 +454,9 @@ async function stopQr(){
   if($('#startQrBtn')){$('#startQrBtn').disabled=false;$('#stopQrBtn').disabled=true}
 }
 
+$('#saveRatesBtn').addEventListener('click',saveRates);
+$('#exportBackupBtn').addEventListener('click',exportBackup);
+$('#importBackupBtn').addEventListener('click',importBackup);
 $('#masterLoginBtn').addEventListener('click',masterLogin);
 $('#masterPassword').addEventListener('keydown',e=>{if(e.key==='Enter')masterLogin()});
 $('#masterLogoutBtn').addEventListener('click',masterLogout);

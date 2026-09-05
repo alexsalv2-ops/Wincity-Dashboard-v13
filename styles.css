@@ -248,3 +248,25 @@ main{max-width:1500px;margin:auto;padding:20px 24px 100px}
   .online-entry-grid>div{grid-template-columns:1fr 1fr}
   .master-area .section-title{align-items:flex-start}
 }
+
+/* UPDATE 5 — SETTINGS + BACKUP */
+.master-tools-grid{display:grid;grid-template-columns:1.45fr .75fr;gap:14px;margin-bottom:14px}
+.settings-body,.backup-body{padding:14px 16px}
+.rates-table{display:grid;gap:7px}
+.rates-head,.rate-row{display:grid;grid-template-columns:minmax(150px,1.3fr) minmax(90px,.65fr) minmax(120px,.8fr);gap:8px;align-items:center}
+.rates-head{font-size:10px;text-transform:uppercase;color:#72808d;font-weight:900;padding:0 8px}
+.rate-row{border:1px solid #dde5ea;border-radius:11px;padding:8px;background:#fbfdfe}
+.rate-row strong{font-size:12px}
+.rate-row input{width:100%;min-width:0;border:1px solid #ccd7df;border-radius:9px;padding:9px 10px;font-size:16px;color:#142338;background:white}
+.settings-actions{display:flex;align-items:center;gap:10px;margin-top:12px}
+#ratesStatus{font-size:12px;font-weight:800}
+.backup-body{display:grid;gap:11px}
+.backup-file-label{display:grid;gap:6px;font-size:12px;font-weight:800;color:#536171}
+.backup-file-label input{border:1px solid #ccd7df;border-radius:10px;padding:9px;background:white}
+.backup-warning{border:1px solid #efc4ca;background:#fff5f6;border-radius:11px;padding:10px;color:#6f4650;font-size:11px}
+@media(max-width:900px){.master-tools-grid{grid-template-columns:1fr}}
+@media(max-width:700px){
+ .rates-head,.rate-row{grid-template-columns:1fr 1fr}
+ .rates-head span:first-child{display:none}
+ .rate-row strong{grid-column:1/-1}
+}

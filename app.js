@@ -1,4 +1,39 @@
 
+// v13.14 - legenda grafico garantita anche su browser/cache precedenti
+(function ensureTrendLegend(){
+  function install(){
+    try{
+      const canvas=document.getElementById('trendChart');
+      if(!canvas) return;
+      const panel=canvas.closest('.chart-panel');
+      if(!panel) return;
+      const head=panel.querySelector('.panel-head');
+      if(!head) return;
+      let legend=head.querySelector('.chart-legend');
+      if(!legend){
+        const left=head.firstElementChild || head;
+        legend=document.createElement('div');
+        legend.className='chart-legend';
+        legend.setAttribute('aria-label','Legenda grafico');
+        legend.innerHTML='<span><i></i>Giocate</span><span><i></i>Pagato</span><span><i></i>Netto</span>';
+        left.appendChild(legend);
+      }
+      // Stili inline: la legenda resta visibile anche se styles.css è ancora in cache.
+      Object.assign(legend.style,{display:'flex',alignItems:'center',gap:'14px',flexWrap:'wrap',marginTop:'7px',fontSize:'11px',fontWeight:'800',color:'#5f6d7d',visibility:'visible',opacity:'1',height:'auto'});
+      const colors=['#ef233c','#f08a00','#12a05a'];
+      [...legend.querySelectorAll('span')].forEach((s,i)=>{
+        Object.assign(s.style,{display:'inline-flex',alignItems:'center',gap:'5px'});
+        let dot=s.querySelector('i');
+        if(!dot){dot=document.createElement('i');s.prepend(dot);}
+        Object.assign(dot.style,{width:'9px',height:'9px',borderRadius:'50%',display:'inline-block',background:colors[i]||'#777',flex:'0 0 auto'});
+      });
+    }catch(e){}
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',install,{once:true}); else install();
+  window.addEventListener('pageshow',install);
+})();
+
+
 let db={records:[],settings:{}};
 let currentMonth=new Date().toISOString().slice(0,7);
 

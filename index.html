@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#c90f22">
+  <title>Wincity Trani Dashboard</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="hero">
+    <img class="brand-logo" src="wincity-logo.png" alt="Sisal Wincity">
+    <div class="hero-title">
+      <div class="eyebrow">RM1771 · Dashboard v13</div>
+      <h1>Wincity Trani</h1>
+      <p>Controllo rendiconti, giocate e statistiche</p>
+    </div>
+    <button class="refresh" id="refreshBtn" aria-label="Aggiorna">↻</button>
+  </header>
+
+  <nav class="main-nav">
+    <button class="active" data-view="dashboard">⌂ Dashboard</button>
+    <button data-view="history">◉ Storico</button>
+  </nav>
+
+  <main>
+    <section id="dashboardView" class="view active">
+      <div class="period-head">
+        <button id="prevPeriod" class="arrow">‹</button>
+        <div class="period-title">
+          <span id="periodKind">MESE IN VISTA</span>
+          <strong id="periodTitle">—</strong>
+        </div>
+        <button id="nextPeriod" class="arrow">›</button>
+      </div>
+
+      <div class="period-panel">
+        <label>Periodo
+          <select id="periodType">
+            <option value="currentMonth">Mese corrente</option>
+            <option value="specificMonth">Mese specifico</option>
+            <option value="day">Giorno specifico</option>
+          </select>
+        </label>
+        <div id="periodExtra"></div>
+      </div>
+
+      <section class="kpi-grid" id="kpiGrid"></section>
+
+      <div class="dashboard-grid">
+        <section class="panel chart-panel">
+          <div class="panel-head">
+            <div>
+              <h2>▥ Andamento mensile</h2>
+              <p>Giocate, Pagato e Netto</p>
+            </div>
+            <span class="pill" id="dayCount">0 giorni</span>
+          </div>
+          <div class="chart-wrap">
+            <canvas id="trendChart" width="1200" height="420"></canvas>
+          </div>
+        </section>
+
+        <section class="panel recent-panel">
+          <div class="panel-head">
+            <h2>▣ Ultimi giorni</h2>
+            <button class="link-button" data-view="history">Vedi storico →</button>
+          </div>
+          <div id="recentDays"></div>
+          <div class="accounts-box">
+            <div>
+              <span>Conti aperti</span>
+              <strong id="accountsTotal">0</strong>
+            </div>
+            <small>Totale periodo</small>
+          </div>
+        </section>
+      </div>
+
+      <section class="detail-grid">
+        <article class="detail-card sport">
+          <h3>⚽ Sport Agenzia</h3>
+          <div id="sportDetail"></div>
+        </article>
+        <article class="detail-card virtual">
+          <h3>🎮 Virtual Agenzia</h3>
+          <div id="virtualDetail"></div>
+        </article>
+        <article class="detail-card vlt">
+          <h3>▥ VLT</h3>
+          <div id="vltDetail"></div>
+        </article>
+        <article class="detail-card online">
+          <h3>Online</h3>
+          <p class="subtle">Sport + Virtual + Casinò + Poker</p>
+          <div id="onlineDetail"></div>
+        </article>
+      </section>
+    </section>
+
+    <section id="historyView" class="view">
+      <div class="section-title">
+        <div>
+          <span class="eyebrow">Archivio</span>
+          <h2>Storico giornate</h2>
+          <p>Sport, Virtual, VLT e Online sempre distinti.</p>
+        </div>
+        <input id="historyMonth" type="month">
+      </div>
+      <div id="historyList"></div>
+    </section>
+  </main>
+
+  <nav class="bottom-nav">
+    <button class="active" data-view="dashboard">⌂<span>Dashboard</span></button>
+    <button data-view="history">☰<span>Storico</span></button>
+  </nav>
+
+  <div id="toast" class="toast"></div>
+  <script src="app.js"></script>
+</body>
+</html>

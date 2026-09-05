@@ -1,0 +1,68 @@
+[
+  {
+    "periodo": "01/07/2026 - 31/07/2026",
+    "lordo": 84723.35,
+    "annullato": 2309.82,
+    "rimborsabili": 2.73,
+    "netto": 73455.6,
+    "pagabili": 8957.93,
+    "margine": 8957.93,
+    "margine_pct": 10.57,
+    "data": "2026-07-31"
+  },
+  {
+    "periodo": "01/06/2025 - 30/06/2026",
+    "lordo": 441830.2,
+    "annullato": 4699.11,
+    "rimborsabili": 1.06,
+    "netto": 418907.15,
+    "pagabili": 94.81,
+    "margine": 18223.94,
+    "margine_pct": 4.12,
+    "data": "2026-07-31"
+  },
+  {
+    "periodo": "01/05/2025 - 31/05/2026",
+    "lordo": 322115.35,
+    "annullato": 3721.83,
+    "rimborsabili": 1.16,
+    "netto": 303959.34,
+    "pagabili": 94.36,
+    "margine": 14434.18,
+    "margine_pct": 4.48,
+    "data": "2026-07-31"
+  },
+  {
+    "periodo": "01/04/2025 - 30/04/2026",
+    "lordo": 123717.8,
+    "annullato": 4856.94,
+    "rimborsabili": 3.93,
+    "netto": 100024.96,
+    "pagabili": 18835.9,
+    "margine": 18835.9,
+    "margine_pct": 15.22,
+    "data": "2026-07-31"
+  },
+  {
+    "periodo": "01/03/2025 - 31/03/2026",
+    "lordo": 27663.75,
+    "annullato": 309.31,
+    "rimborsabili": 1.12,
+    "netto": 26154.59,
+    "pagabili": 1199.85,
+    "margine": 1199.85,
+    "margine_pct": 4.34,
+    "data": "2026-07-31"
+  },
+  {
+    "periodo": "non visibile",
+    "lordo": 106770.55,
+    "annullato": -950.83,
+    "rimborsabili": -0.89,
+    "netto": 111408.71,
+    "pagabili": 104.34,
+    "margine": -3687.33,
+    "margine_pct": -3.45,
+    "data": "2026-08-31"
+  }
+]

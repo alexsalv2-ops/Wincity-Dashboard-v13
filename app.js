@@ -36,6 +36,7 @@
 
 let db={records:[],settings:{}};
 let currentMonth=new Date().toISOString().slice(0,7);
+let semesterCursor={year:new Date().getFullYear(),half:(new Date().getMonth()<6?1:2)};
 
 const defs={
   sp:{g:'sp-g',p:'sp-p',mode:'lordo',pct:50,pctKey:'aSp',tax:'tSp'},
@@ -117,7 +118,7 @@ function getPeriod(){
     return {type,label:String(y),records:db.records.filter(r=>r.data>=from&&r.data<=to)};
   }
   if(type==='semester'){
-    const y=today.getFullYear(), first=today.getMonth()<6;
+    const y=semesterCursor.year, first=semesterCursor.half===1;
     const from=`${y}-${first?'01':'07'}-01`,to=`${y}-${first?'06-30':'12-31'}`;
     return {type,label:`${first?'1°':'2°'} semestre ${y}`,records:db.records.filter(r=>r.data>=from&&r.data<=to)};
   }
@@ -131,6 +132,16 @@ function getPeriod(){
 }
 function renderPeriodExtra(){
   const type=$('#periodType').value,host=$('#periodExtra');
+  if(type==='semester'){
+    if(delta<0){
+      if(semesterCursor.half===2) semesterCursor.half=1;
+      else { semesterCursor.year--; semesterCursor.half=2; }
+    }else{
+      if(semesterCursor.half===1) semesterCursor.half=2;
+      else { semesterCursor.year++; semesterCursor.half=1; }
+    }
+    renderDashboard(); return;
+  }
   if(type==='specificMonth'){
     const opts=[]; for(let y=2025;y<=2032;y++)for(let m=1;m<=12;m++){
       const val=`${y}-${String(m).padStart(2,'0')}`;
@@ -744,7 +755,10 @@ async function loadData(){
     }
   }
 }
-$('#periodType').addEventListener('change',()=>{renderPeriodExtra();renderDashboard()});
+$('#periodType').addEventListener('change',()=>{
+  if($('#periodType').value==='semester'){const n=new Date();semesterCursor={year:n.getFullYear(),half:(n.getMonth()<6?1:2)};}
+  renderPeriodExtra();renderDashboard();
+});
 $('#prevPeriod').addEventListener('click',()=>shiftPeriod(-1));
 $('#nextPeriod').addEventListener('click',()=>shiftPeriod(1));
 $('#refreshBtn').addEventListener('click',()=>location.reload());

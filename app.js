@@ -147,6 +147,13 @@ function renderPeriodExtra(){
 }
 function shiftPeriod(delta){
   const type=$('#periodType').value;
+  if(type==='today'){
+    const d=new Date(); d.setHours(12,0,0,0); d.setDate(d.getDate()+delta);
+    $('#periodType').value='day';
+    renderPeriodExtra();
+    const el=$('#specificDay'); if(el) el.value=isoLocal(d);
+    renderDashboard(); return;
+  }
   if(type==='day'){
     const el=$('#specificDay'); if(!el)return;
     const d=new Date(el.value+'T12:00:00'); d.setDate(d.getDate()+delta); el.value=isoLocal(d); renderDashboard(); return;

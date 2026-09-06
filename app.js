@@ -386,7 +386,11 @@ function loadDayToForm(){
   $('#contiInput').value=num(r.conti);updateRawPreview();
   $('#saveStatus').textContent='Giornata caricata. Le modifiche sovrascriveranno questa data.';
 }
-async function pushDataToGithub(nextDb){
+function decodeGithubContent(content){
+  const clean=String(content||'').replace(/\s/g,'');
+  return JSON.parse(decodeURIComponent(escape(atob(clean))));
+}
+async function fetchLatestGithubDb(){
   const token=getGithubToken();
   if(!token) throw new Error('Token GitHub non disponibile in questa sessione. Apri Impostazioni e premi Salva sul dispositivo.');
   const api=`https://api.github.com/repos/${GH_REPO}/contents/${GH_FILE}`;
@@ -394,30 +398,49 @@ async function pushDataToGithub(nextDb){
   const get=await fetch(api,{headers,cache:'no-store'});
   if(!get.ok) throw new Error(`GitHub GET ${get.status}`);
   const info=await get.json();
-  const content=btoa(unescape(encodeURIComponent(JSON.stringify(nextDb,null,2))));
+  if(!info.content) throw new Error('GitHub non ha restituito il contenuto di data.json');
+  const remoteDb=decodeGithubContent(info.content);
+  if(!remoteDb || !Array.isArray(remoteDb.records)) throw new Error('data.json remoto non valido');
+  remoteDb.settings=remoteDb.settings||{};
+  remoteDb.records.sort((a,b)=>a.data.localeCompare(b.data));
+  return {remoteDb,sha:info.sha,api,headers};
+}
+async function pushDataToGithubMerged(rec){
+  const {remoteDb,sha,api,headers}=await fetchLatestGithubDb();
+
+  // La sorgente autorevole è il data.json appena letto da GitHub.
+  // Modifichiamo SOLO la giornata richiesta: così un eventuale ritardo/cache
+  // di GitHub Pages non può ripristinare o cancellare altre giornate.
+  const ni=remoteDb.records.findIndex(r=>r.data===rec.data);
+  if(ni>=0) remoteDb.records[ni]=rec; else remoteDb.records.push(rec);
+  remoteDb.records.sort((a,b)=>a.data.localeCompare(b.data));
+
+  const content=btoa(unescape(encodeURIComponent(JSON.stringify(remoteDb,null,2))));
   const put=await fetch(api,{method:'PUT',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify({
-    message:`Dashboard: aggiorna ${$('#entryDate').value}`,
-    content,sha:info.sha
+    message:`Dashboard: aggiorna ${rec.data}`,
+    content,sha
   })});
   if(!put.ok){
     let msg=''; try{msg=(await put.json()).message||''}catch{}
     throw new Error(`GitHub PUT ${put.status}${msg?': '+msg:''}`);
   }
+  return remoteDb;
 }
 async function saveEntry(){
   if(!isMaster()) return;
   try{
-    const rec=recordFromForm(), idx=db.records.findIndex(r=>r.data===rec.data);
+    const rec=recordFromForm();
+    const idx=db.records.findIndex(r=>r.data===rec.data);
     if(idx>=0 && !confirm(`La giornata ${dmy(rec.data)} esiste già. Vuoi sovrascriverla?`)) return;
-    const nextDb=JSON.parse(JSON.stringify(db));
-    const ni=nextDb.records.findIndex(r=>r.data===rec.data);
-    if(ni>=0) nextDb.records[ni]=rec; else nextDb.records.push(rec);
-    nextDb.records.sort((a,b)=>a.data.localeCompare(b.data));
+
     $('#saveEntryBtn').disabled=true; $('#saveStatus').textContent='Salvataggio su GitHub...';
-    await pushDataToGithub(nextDb);
-    db=nextDb; currentMonth=rec.data.slice(0,7);
+    const savedDb=await pushDataToGithubMerged(rec);
+
+    db=savedDb; currentMonth=rec.data.slice(0,7);
+    $('#historyMonth').value=currentMonth;
     $('#saveStatus').textContent='Salvato ✓';
-    renderDashboard(); if($('#historyView').classList.contains('active'))renderHistory();
+    renderDashboard();
+    if($('#historyView').classList.contains('active')) renderHistory();
   }catch(e){console.error(e);$('#saveStatus').textContent='Errore: '+e.message}
   finally{$('#saveEntryBtn').disabled=false}
 }

@@ -133,14 +133,8 @@ function getPeriod(){
 function renderPeriodExtra(){
   const type=$('#periodType').value,host=$('#periodExtra');
   if(type==='semester'){
-    if(delta<0){
-      if(semesterCursor.half===2) semesterCursor.half=1;
-      else { semesterCursor.year--; semesterCursor.half=2; }
-    }else{
-      if(semesterCursor.half===1) semesterCursor.half=2;
-      else { semesterCursor.year++; semesterCursor.half=1; }
-    }
-    renderDashboard(); return;
+    host.innerHTML='';
+    return;
   }
   if(type==='specificMonth'){
     const opts=[]; for(let y=2025;y<=2032;y++)for(let m=1;m<=12;m++){
@@ -158,6 +152,16 @@ function renderPeriodExtra(){
 }
 function shiftPeriod(delta){
   const type=$('#periodType').value;
+  if(type==='semester'){
+    if(delta<0){
+      if(semesterCursor.half===2) semesterCursor.half=1;
+      else { semesterCursor.year--; semesterCursor.half=2; }
+    }else{
+      if(semesterCursor.half===1) semesterCursor.half=2;
+      else { semesterCursor.year++; semesterCursor.half=1; }
+    }
+    renderDashboard(); return;
+  }
   if(type==='today'){
     const d=new Date(); d.setHours(12,0,0,0); d.setDate(d.getDate()+delta);
     $('#periodType').value='day';

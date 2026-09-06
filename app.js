@@ -37,6 +37,8 @@
 let db={records:[],settings:{}};
 let currentMonth=new Date().toISOString().slice(0,7);
 let semesterCursor={year:new Date().getFullYear(),half:(new Date().getMonth()<6?1:2)};
+let weekCursor=new Date(); weekCursor.setHours(12,0,0,0);
+let yearCursor=new Date().getFullYear();
 
 const defs={
   sp:{g:'sp-g',p:'sp-p',mode:'lordo',pct:50,pctKey:'aSp',tax:'tSp'},
@@ -109,12 +111,12 @@ function getPeriod(){
     return {type,label:'Cumulato totale',records:[...db.records]};
   }
   if(type==='currentWeek'){
-    const d=new Date(today), dow=(d.getDay()+6)%7; d.setDate(d.getDate()-dow);
+    const d=new Date(weekCursor), dow=(d.getDay()+6)%7; d.setDate(d.getDate()-dow);
     const from=isoLocal(d); d.setDate(d.getDate()+6); const to=isoLocal(d);
     return {type,label:`${dmy(from)} — ${dmy(to)}`,records:db.records.filter(r=>r.data>=from&&r.data<=to)};
   }
   if(type==='currentYear'){
-    const y=today.getFullYear(),from=`${y}-01-01`,to=`${y}-12-31`;
+    const y=yearCursor,from=`${y}-01-01`,to=`${y}-12-31`;
     return {type,label:String(y),records:db.records.filter(r=>r.data>=from&&r.data<=to)};
   }
   if(type==='semester'){
@@ -152,6 +154,26 @@ function renderPeriodExtra(){
 }
 function shiftPeriod(delta){
   const type=$('#periodType').value;
+
+  if(type==='today'){
+    const d=new Date(); d.setHours(12,0,0,0); d.setDate(d.getDate()+delta);
+    $('#periodType').value='day';
+    renderPeriodExtra();
+    const el=$('#specificDay'); if(el) el.value=isoLocal(d);
+    renderDashboard(); return;
+  }
+
+  if(type==='day'){
+    const el=$('#specificDay'); if(!el)return;
+    const d=new Date(el.value+'T12:00:00'); d.setDate(d.getDate()+delta);
+    el.value=isoLocal(d); renderDashboard(); return;
+  }
+
+  if(type==='currentWeek'){
+    weekCursor.setDate(weekCursor.getDate() + (delta*7));
+    renderDashboard(); return;
+  }
+
   if(type==='semester'){
     if(delta<0){
       if(semesterCursor.half===2) semesterCursor.half=1;
@@ -162,24 +184,47 @@ function shiftPeriod(delta){
     }
     renderDashboard(); return;
   }
-  if(type==='today'){
-    const d=new Date(); d.setHours(12,0,0,0); d.setDate(d.getDate()+delta);
-    $('#periodType').value='day';
-    renderPeriodExtra();
-    const el=$('#specificDay'); if(el) el.value=isoLocal(d);
+
+  if(type==='currentYear'){
+    yearCursor += delta;
     renderDashboard(); return;
   }
-  if(type==='day'){
-    const el=$('#specificDay'); if(!el)return;
-    const d=new Date(el.value+'T12:00:00'); d.setDate(d.getDate()+delta); el.value=isoLocal(d); renderDashboard(); return;
+
+  if(type==='range'){
+    const fromEl=$('#rangeFrom'), toEl=$('#rangeTo');
+    if(!fromEl||!toEl||!fromEl.value||!toEl.value)return;
+    const from=new Date(fromEl.value+'T12:00:00');
+    const to=new Date(toEl.value+'T12:00:00');
+    const days=Math.max(1,Math.round((to-from)/86400000)+1);
+    from.setDate(from.getDate()+delta*days);
+    to.setDate(to.getDate()+delta*days);
+    fromEl.value=isoLocal(from); toEl.value=isoLocal(to);
+    renderDashboard(); return;
   }
+
   if(type==='specificMonth'){
     const el=$('#specificMonth'),[y,m]=(el.value||currentMonth).split('-').map(Number);
-    const d=new Date(y,m-1+delta,1,12); currentMonth=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; el.value=currentMonth; renderDashboard(); return;
+    const d=new Date(y,m-1+delta,1,12);
+    currentMonth=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    el.value=currentMonth; renderDashboard(); return;
   }
-  $('#periodType').value='specificMonth';
-  const base=getPeriod().records.at(-1)?.data?.slice(0,7)||currentMonth;
-  currentMonth=base; renderPeriodExtra(); shiftPeriod(delta);
+
+  if(type==='currentMonth' || type==='previousMonth'){
+    const p=getPeriod();
+    const [y,m]=(p.label && p.records.length ? (p.records[0].data.slice(0,7)) : currentMonth).split('-').map(Number);
+    const base = type==='previousMonth' ? new Date(new Date().getFullYear(),new Date().getMonth()-1,1,12) : new Date(y,m-1,1,12);
+    base.setMonth(base.getMonth()+delta);
+    currentMonth=`${base.getFullYear()}-${String(base.getMonth()+1).padStart(2,'0')}`;
+    $('#periodType').value='specificMonth';
+    renderPeriodExtra();
+    const el=$('#specificMonth'); if(el) el.value=currentMonth;
+    renderDashboard(); return;
+  }
+
+  if(type==='all'){
+    // Il cumulato totale non ha un periodo precedente/successivo equivalente.
+    return;
+  }
 }
 
 function kv(c,played='Giocato'){
@@ -760,7 +805,11 @@ async function loadData(){
   }
 }
 $('#periodType').addEventListener('change',()=>{
-  if($('#periodType').value==='semester'){const n=new Date();semesterCursor={year:n.getFullYear(),half:(n.getMonth()<6?1:2)};}
+  const type=$('#periodType').value;
+  const n=new Date(); n.setHours(12,0,0,0);
+  if(type==='semester') semesterCursor={year:n.getFullYear(),half:(n.getMonth()<6?1:2)};
+  if(type==='currentWeek') weekCursor=new Date(n);
+  if(type==='currentYear') yearCursor=n.getFullYear();
   renderPeriodExtra();renderDashboard();
 });
 $('#prevPeriod').addEventListener('click',()=>shiftPeriod(-1));

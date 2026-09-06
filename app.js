@@ -445,6 +445,50 @@ async function saveEntry(){
   finally{$('#saveEntryBtn').disabled=false}
 }
 
+async function deleteEntry(){
+  if(!isMaster()) return;
+  const date=$('#entryDate').value;
+  if(!date){ $('#saveStatus').textContent='Seleziona una data da eliminare.'; return; }
+  try{
+    $('#deleteEntryBtn').disabled=true;
+    $('#saveStatus').textContent='Verifica giornata su GitHub...';
+    const {remoteDb,sha,api,headers}=await fetchLatestGithubDb();
+    const idx=remoteDb.records.findIndex(r=>r.data===date);
+    if(idx<0){
+      db=remoteDb;
+      $('#saveStatus').textContent=`La giornata ${dmy(date)} non esiste.`;
+      return;
+    }
+    if(!confirm(`Eliminare definitivamente la giornata ${dmy(date)}? Questa operazione rimuoverà solo questa data dal database.`)){
+      $('#saveStatus').textContent='Eliminazione annullata.';
+      return;
+    }
+    remoteDb.records.splice(idx,1);
+    remoteDb.records.sort((a,b)=>a.data.localeCompare(b.data));
+    const content=btoa(unescape(encodeURIComponent(JSON.stringify(remoteDb,null,2))));
+    $('#saveStatus').textContent='Eliminazione su GitHub...';
+    const put=await fetch(api,{method:'PUT',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify({
+      message:`Dashboard: elimina ${date}`,content,sha
+    })});
+    if(!put.ok){
+      let msg=''; try{msg=(await put.json()).message||''}catch{}
+      throw new Error(`GitHub PUT ${put.status}${msg?': '+msg:''}`);
+    }
+    db=remoteDb;
+    clearEntry();
+    currentMonth=date.slice(0,7);
+    $('#historyMonth').value=currentMonth;
+    $('#saveStatus').textContent=`Giornata ${dmy(date)} eliminata ✓`;
+    renderDashboard();
+    renderHistory();
+  }catch(e){
+    console.error(e);
+    $('#saveStatus').textContent='Errore: '+e.message;
+  }finally{
+    $('#deleteEntryBtn').disabled=false;
+  }
+}
+
 function rateText(v){return Number(v??0).toLocaleString('it-IT',{minimumFractionDigits:0,maximumFractionDigits:2})}
 function loadRateFields(){
   const map=[
@@ -654,6 +698,7 @@ $('#masterPassword').addEventListener('keydown',e=>{if(e.key==='Enter')masterLog
 $('#masterLogoutBtn').addEventListener('click',masterLogout);
 $('#loadDayBtn').addEventListener('click',loadDayToForm);
 $('#saveEntryBtn').addEventListener('click',saveEntry);
+$('#deleteEntryBtn').addEventListener('click',deleteEntry);
 $('#startQrBtn').addEventListener('click',startQr);
 $('#stopQrBtn').addEventListener('click',stopQr);
 $('#applyQrBtn').addEventListener('click',()=>applyQrPayload($('#qrPayload').value));

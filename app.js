@@ -1,4 +1,4 @@
-// v13.32 - AWP settimanali: mese dalla data iniziale + import OCR da foto
+// v13.33 - OCR AWP più robusto: pre-elaborazione + riconoscimento matematico
 
 // v13.14 - legenda grafico garantita anche su browser/cache precedenti
 (function ensureTrendLegend(){
@@ -744,8 +744,7 @@ async function pushUtileToGithubMerged(item){
 function parseOcrItalianAmount(raw){
   let s=String(raw||'').trim().replace(/[€+]/g,'').replace(/\s/g,'');
   if(!s)return null;
-  // OCR: tollera punto/virgola come separatore decimale finale.
-  const m=s.match(/-?\d[\d.]*[,.]\d{2}$/);
+  const m=s.match(/-?\d[\d.,]*[,.]\d{2}$/);
   if(!m)return null;
   s=m[0];
   const lastComma=s.lastIndexOf(','),lastDot=s.lastIndexOf('.');
@@ -760,38 +759,73 @@ function ocrIsoDate(d,m,y){
   if(y<2000||y>2100||m<1||m>12||d<1||d>31)return null;
   return `${String(y).padStart(4,'0')}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
 }
+function normalizeOcrText(s){
+  return String(s||'')
+    .toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+    .replace(/[|]/g,'l')
+    .replace(/0(?=[a-z])/g,'o')
+    .replace(/1(?=[a-z])/g,'l');
+}
+async function prepareAwpImage(file){
+  const bmp=await createImageBitmap(file);
+  const scale=Math.min(2.2,Math.max(1,1800/bmp.width));
+  const canvas=document.createElement('canvas');
+  canvas.width=Math.round(bmp.width*scale);
+  canvas.height=Math.round(bmp.height*scale);
+  const ctx=canvas.getContext('2d',{willReadFrequently:true});
+  ctx.filter='grayscale(1) contrast(1.65) brightness(1.08)';
+  ctx.drawImage(bmp,0,0,canvas.width,canvas.height);
+  ctx.filter='none';
+  try{bmp.close()}catch{}
+  return canvas;
+}
+function inferAwpSummaryByMath(text){
+  const norm=String(text||'');
+  let zone=norm;
+  const awpPos=norm.search(/\bAWP\b/i);
+  if(awpPos>=0) zone=norm.slice(awpPos);
+  const vltPos=zone.search(/\bVLT\b/i);
+  if(vltPos>0) zone=zone.slice(0,vltPos);
+
+  const vals=[...zone.matchAll(/-?\d[\d.\s]*[,.]\d{2}\+?/g)]
+    .map(m=>parseOcrItalianAmount(m[0])).filter(v=>v!==null);
+
+  const candidates=[];
+  for(let i=0;i<=vals.length-5;i++){
+    const [a,b,c,d,e]=vals.slice(i,i+5);
+    if(a<=0||b<0||c<0||d<0||e<0)continue;
+    const err1=Math.abs((a-b)-c);
+    const err2=Math.abs((c-d)-e);
+    if(err1<=0.15 && err2<=0.15 && d<=c){
+      candidates.push({raccolta:a,vincite:b,cassa:c,corrispettivo:d,prelevato:e,index:i});
+    }
+  }
+  return candidates.at(-1)||null;
+}
 function extractAwpFromOcr(text){
   const raw=String(text||'').replace(/\r/g,'');
   const flat=raw.replace(/\n+/g,' ').replace(/\s+/g,' ').trim();
   const lines=raw.split('\n').map(x=>x.replace(/\s+/g,' ').trim()).filter(Boolean);
+  const nlines=lines.map(normalizeOcrText);
 
   let dal=null,al=null;
-  const period=flat.match(/dal\s*(\d{1,2})\D+(\d{1,2})\D+(20\d{2})\s+al\s*(\d{1,2})\D+(\d{1,2})\D+(20\d{2})/i);
-  if(period){
-    dal=ocrIsoDate(period[1],period[2],period[3]);
-    al=ocrIsoDate(period[4],period[5],period[6]);
-  }else{
-    const dates=[...flat.matchAll(/\b(\d{1,2})[-\/.](\d{1,2})[-\/.](20\d{2})\b/g)];
-    if(dates.length>=2){
-      dal=ocrIsoDate(dates[0][1],dates[0][2],dates[0][3]);
-      al=ocrIsoDate(dates[1][1],dates[1][2],dates[1][3]);
-    }
-  }
+  const dateMatches=[...flat.matchAll(/\b(\d{1,2})\D{1,4}(\d{1,2})\D{1,4}(20\d{2})\b/g)];
+  const validDates=dateMatches
+    .map(m=>ocrIsoDate(m[1],m[2],m[3]))
+    .filter(Boolean);
+  if(validDates.length>=2){ dal=validDates[0]; al=validDates[1]; }
 
   const moneyValues=line=>[...String(line||'').matchAll(/-?\d[\d.\s]*[,.]\d{2}\+?/g)]
     .map(m=>parseOcrItalianAmount(m[0])).filter(v=>v!==null);
   const moneyFromNearby=(matcher)=>{
     for(let i=0;i<lines.length;i++){
-      const low=lines[i].toLowerCase();
-      if(!matcher(low))continue;
+      if(!matcher(nlines[i]))continue;
       const same=moneyValues(lines[i]);
       if(same.length)return same.at(-1);
-      // Se l'OCR manda il valore a capo, guarda al massimo le due righe successive,
-      // ma fermati appena compare l'etichetta di un'altra voce contabile.
       for(let j=1;j<=2;j++){
-        const next=lines[i+j]||'';
-        const nextLow=next.toLowerCase();
-        if(/raccolta|vincit|corrispettiv|cassa|prelevato/.test(nextLow))break;
+        const next=lines[i+j]||'',nextLow=nlines[i+j]||'';
+        if(/racc|vinc|corr|cassa|prelev/.test(nextLow))break;
         const vals=moneyValues(next);
         if(vals.length)return vals.at(-1);
       }
@@ -799,9 +833,16 @@ function extractAwpFromOcr(text){
     return null;
   };
 
-  const raccolta=moneyFromNearby(s=>s.includes('raccolta')&&(s.includes('period')||s.includes('totale')));
-  const vincite=moneyFromNearby(s=>(s.includes('vincit')||s.includes('vinc1t'))&&(s.includes('period')||s.includes('totale')));
-  const corrispettivo=moneyFromNearby(s=>s.includes('corrispettiv')||s.includes('esercente'));
+  let raccolta=moneyFromNearby(s=>s.includes('racc')&&(s.includes('period')||s.includes('tot')));
+  let vincite=moneyFromNearby(s=>s.includes('vinc')&&(s.includes('period')||s.includes('tot')));
+  let corrispettivo=moneyFromNearby(s=>s.includes('corr')||s.includes('eserc'));
+
+  const inferred=inferAwpSummaryByMath(raw);
+  if(inferred){
+    if(raccolta===null)raccolta=inferred.raccolta;
+    if(vincite===null)vincite=inferred.vincite;
+    if(corrispettivo===null)corrispettivo=inferred.corrispettivo;
+  }
 
   return {dal,al,raccolta,vincite,corrispettivo};
 }
@@ -813,13 +854,15 @@ async function readAwpPhoto(file){
     $('#awpPhotoBtn').disabled=true;
     if(status)status.textContent='Preparazione foto...';
 
-    const result=await Tesseract.recognize(file,'ita',{
+    const prepared=await prepareAwpImage(file);
+    const result=await Tesseract.recognize(prepared,'ita',{
       logger:m=>{
         if(!status)return;
         if(m.status==='recognizing text') status.textContent=`Lettura borderò... ${Math.round((m.progress||0)*100)}%`;
         else if(m.status) status.textContent='OCR: '+m.status;
       }
     });
+
     const found=extractAwpFromOcr(result?.data?.text||'');
     const missing=[];
     if(found.dal)$('#awpDal').value=found.dal;else missing.push('data iniziale');
@@ -829,7 +872,7 @@ async function readAwpPhoto(file){
     if(found.corrispettivo!==null)setVal('awpCorrispettivo',found.corrispettivo);else missing.push('corrispettivo');
 
     if(missing.length){
-      if(status)status.textContent='Foto letta, ma non ho riconosciuto: '+missing.join(', ')+'. Controlla e completa a mano.';
+      if(status)status.textContent='Foto letta, ma non ho riconosciuto: '+missing.join(', ')+'. Prova a fotografare il borderò dritto, riempiendo bene l’inquadratura.';
     }else{
       if(status)status.textContent=`Foto letta ✓ ${dmy(found.dal)} → ${dmy(found.al)} · Raccolta ${eur(found.raccolta)} · Vincite ${eur(found.vincite)} · Corrispettivo ${eur(found.corrispettivo)}. Controlla e premi Salva.`;
     }

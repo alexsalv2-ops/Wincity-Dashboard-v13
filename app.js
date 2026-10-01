@@ -778,13 +778,23 @@ function extractAwpFromOcr(text){
     }
   }
 
+  const moneyValues=line=>[...String(line||'').matchAll(/-?\d[\d.\s]*[,.]\d{2}\+?/g)]
+    .map(m=>parseOcrItalianAmount(m[0])).filter(v=>v!==null);
   const moneyFromNearby=(matcher)=>{
     for(let i=0;i<lines.length;i++){
       const low=lines[i].toLowerCase();
       if(!matcher(low))continue;
-      const nearby=[lines[i],lines[i+1]||'',lines[i+2]||''].join(' ');
-      const vals=[...nearby.matchAll(/-?\d[\d.\s]*[,.]\d{2}\+?/g)].map(m=>parseOcrItalianAmount(m[0])).filter(v=>v!==null);
-      if(vals.length)return vals.at(-1);
+      const same=moneyValues(lines[i]);
+      if(same.length)return same.at(-1);
+      // Se l'OCR manda il valore a capo, guarda al massimo le due righe successive,
+      // ma fermati appena compare l'etichetta di un'altra voce contabile.
+      for(let j=1;j<=2;j++){
+        const next=lines[i+j]||'';
+        const nextLow=next.toLowerCase();
+        if(/raccolta|vincit|corrispettiv|cassa|prelevato/.test(nextLow))break;
+        const vals=moneyValues(next);
+        if(vals.length)return vals.at(-1);
+      }
     }
     return null;
   };

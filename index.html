@@ -42,6 +42,7 @@
   }
   </style>
   <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
 </head>
 <body>
   <header class="hero">
@@ -135,6 +136,11 @@
           <h3>▥ VLT</h3>
           <div id="vltDetail"></div>
         </article>
+        <article class="detail-card awp-weekly">
+          <h3>🕹 AWP settimanali <span class="pill" id="awpSettimanaleCount">0 settimane</span></h3>
+          <p class="subtle">Borderò settimanale · mese dalla data iniziale</p>
+          <div id="awpSettimanaleBody"></div>
+        </article>
         <article class="detail-card online">
           <h3>Online</h3>
           <p class="subtle">Sport + Virtual + Casinò + Poker</p>
@@ -153,16 +159,6 @@
         <div id="utileCumulativoBody"></div>
       </section>
 
-      <section class="panel" id="awpSettimanalePanel" style="margin-top:18px">
-        <div class="panel-head">
-          <div>
-            <h2>🕹 AWP settimanali</h2>
-            <p>Borderò settimanale · inserimento manuale</p>
-          </div>
-          <span class="pill" id="awpSettimanaleCount">0 settimane</span>
-        </div>
-        <div id="awpSettimanaleBody"></div>
-      </section>
     </section>
 
     <section id="historyView" class="view">
@@ -302,6 +298,11 @@
               <button id="loadAwpWeeklyBtn" class="secondary-btn">Carica periodo</button>
             </div>
             <div class="entry-body">
+              <div class="save-row" style="margin:0 0 12px">
+                <button id="awpPhotoBtn" class="secondary-btn">📷 Leggi foto borderò</button>
+                <input id="awpPhotoInput" type="file" accept="image/*" capture="environment" hidden>
+              </div>
+              <div id="awpOcrStatus" class="master-note" style="margin:0 0 12px">Puoi scattare una foto o scegliere un'immagine già salvata. I valori vengono solo compilati: controllali prima di salvare.</div>
               <div class="two-fields">
                 <label>Dal<input id="awpDal" type="date"></label>
                 <label>Al<input id="awpAl" type="date"></label>
@@ -311,7 +312,7 @@
                 <label>Vincite<input id="awpVincite" inputmode="decimal" placeholder="0,00"></label>
                 <label>Corrispettivo<input id="awpCorrispettivo" inputmode="decimal" placeholder="0,00"></label>
               </div>
-              <p class="master-note" style="margin-top:10px">Il periodo resta settimanale e non viene distribuito artificialmente sui singoli giorni.</p>
+              <p class="master-note" style="margin-top:10px">Il periodo resta settimanale, non viene distribuito sui singoli giorni e appartiene al mese della data "Dal".</p>
               <div class="save-row" style="margin-top:14px">
                 <button id="saveAwpWeeklyBtn" class="primary-btn">Salva AWP settimanale</button>
                 <button id="deleteAwpWeeklyBtn" class="secondary-btn">Elimina periodo</button>
@@ -403,6 +404,6 @@
   </nav>
 
   <div id="toast" class="toast"></div>
-  <script src="app.js?v=1331"></script>
+  <script src="app.js?v=1332"></script>
 </body>
 </html>

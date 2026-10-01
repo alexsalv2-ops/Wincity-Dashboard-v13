@@ -147,6 +147,17 @@
         </div>
         <div id="utileCumulativoBody"></div>
       </section>
+
+      <section class="panel" id="awpSettimanalePanel" style="margin-top:18px">
+        <div class="panel-head">
+          <div>
+            <h2>🕹 AWP settimanali</h2>
+            <p>Borderò settimanale · inserimento manuale</p>
+          </div>
+          <span class="pill" id="awpSettimanaleCount">0 settimane</span>
+        </div>
+        <div id="awpSettimanaleBody"></div>
+      </section>
     </section>
 
     <section id="historyView" class="view">
@@ -154,7 +165,7 @@
         <div>
           <span class="eyebrow">Archivio</span>
           <h2>Storico giornate</h2>
-          <p>Sport, Virtual, VLT e Online sempre distinti.</p>
+          <p>Sport, Virtual, VLT, Online e AWP settimanali sempre distinti.</p>
         </div>
         <input id="historyMonth" type="month">
       </div>
@@ -276,6 +287,33 @@
               <div id="qrStatus" class="master-note"></div>
             </div>
           </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <h2>🕹 AWP settimanali</h2>
+                <p>Inserisci i dati riportati sul borderò cartaceo.</p>
+              </div>
+              <button id="loadAwpWeeklyBtn" class="secondary-btn">Carica periodo</button>
+            </div>
+            <div class="entry-body">
+              <div class="two-fields">
+                <label>Dal<input id="awpDal" type="date"></label>
+                <label>Al<input id="awpAl" type="date"></label>
+              </div>
+              <div class="three-fields" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:12px">
+                <label>Raccolta<input id="awpRaccolta" inputmode="decimal" placeholder="0,00"></label>
+                <label>Vincite<input id="awpVincite" inputmode="decimal" placeholder="0,00"></label>
+                <label>Corrispettivo<input id="awpCorrispettivo" inputmode="decimal" placeholder="0,00"></label>
+              </div>
+              <p class="master-note" style="margin-top:10px">Il periodo resta settimanale e non viene distribuito artificialmente sui singoli giorni.</p>
+              <div class="save-row" style="margin-top:14px">
+                <button id="saveAwpWeeklyBtn" class="primary-btn">Salva AWP settimanale</button>
+                <button id="deleteAwpWeeklyBtn" class="secondary-btn">Elimina periodo</button>
+                <span id="awpWeeklyStatus"></span>
+              </div>
+            </div>
+          </section>
         </div>
       </div>
     </section>
@@ -360,6 +398,6 @@
   </nav>
 
   <div id="toast" class="toast"></div>
-  <script src="app.js?v=1330"></script>
+  <script src="app.js?v=1331"></script>
 </body>
 </html>

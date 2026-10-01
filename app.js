@@ -1,4 +1,4 @@
-// v13.30 - Utile e chiusura Telegram allineati alla stessa data
+// v13.31 - AWP settimanali manuali (periodo, raccolta, vincite, corrispettivo)
 
 // v13.14 - legenda grafico garantita anche su browser/cache precedenti
 (function ensureTrendLegend(){
@@ -315,6 +315,58 @@ function renderUtileDashboard(p){
     <article class="kpi green"><div class="icon">↗</div><span>Utile netto</span><strong class="${tone(utileNetto(u.lordo),'netto')}">${eur(utileNetto(u.lordo))}</strong><small>50% del lordo</small></article>
   </div>`;
 }
+function awpWeeklySeries(){
+  return Array.isArray(db.awpSettimanale)?db.awpSettimanale:[];
+}
+function awpWeeklyBounds(){
+  const type=$('#periodType')?.value||'currentMonth';
+  const today=new Date(); today.setHours(12,0,0,0);
+  if(type==='all') return {from:null,to:null};
+  if(type==='today'){const d=isoLocal(today);return {from:d,to:d};}
+  if(type==='day'){const d=$('#specificDay')?.value||latestDate();return {from:d,to:d};}
+  if(type==='range') return {from:$('#rangeFrom')?.value||latestDate(),to:$('#rangeTo')?.value||latestDate()};
+  if(type==='currentWeek'){
+    const d=new Date(weekCursor),dow=(d.getDay()+6)%7;d.setDate(d.getDate()-dow);
+    const from=isoLocal(d);d.setDate(d.getDate()+6);return {from,to:isoLocal(d)};
+  }
+  if(type==='semester'){
+    const y=semesterCursor.year,first=semesterCursor.half===1;
+    return {from:`${y}-${first?'01':'07'}-01`,to:`${y}-${first?'06-30':'12-31'}`};
+  }
+  if(type==='currentYear') return {from:`${yearCursor}-01-01`,to:`${yearCursor}-12-31`};
+  const m=currentMonth;
+  return {from:m+'-01',to:m+'-31'};
+}
+function awpWeeklyForCurrentPeriod(){
+  const all=[...awpWeeklySeries()].sort((a,b)=>a.al.localeCompare(b.al));
+  const {from,to}=awpWeeklyBounds();
+  if(!from||!to)return all;
+  return all.filter(x=>x.al>=from&&x.al<=to);
+}
+function renderAwpWeeklyDashboard(){
+  const host=$('#awpSettimanaleBody'),badge=$('#awpSettimanaleCount');
+  if(!host||!badge)return;
+  const rows=awpWeeklyForCurrentPeriod().sort((a,b)=>b.al.localeCompare(a.al));
+  badge.textContent=rows.length===1?'1 settimana':`${rows.length} settimane`;
+  if(!rows.length){
+    host.innerHTML='<div style="padding:18px 4px;color:#73808d">Nessun dato AWP settimanale registrato per il periodo selezionato.</div>';
+    return;
+  }
+  host.innerHTML=rows.map(x=>`<div class="history-summary" style="margin:0 0 10px">
+    <div><span>Periodo</span><strong>${dmy(x.dal)} → ${dmy(x.al)}</strong></div>
+    <div><span>Raccolta</span><strong class="neutral-value">${eur(x.raccolta)}</strong></div>
+    <div><span>Vincite</span><strong class="neutral-value">${eur(x.vincite)}</strong></div>
+    <div><span>Corrispettivo</span><strong class="positive">${eur(x.corrispettivo)}</strong></div>
+  </div>`).join('');
+}
+function renderAwpWeeklyHistory(month){
+  const rows=[...awpWeeklySeries()].filter(x=>x.al.startsWith(month)).sort((a,b)=>b.al.localeCompare(a.al));
+  if(!rows.length)return '';
+  return `<section class="panel" style="margin-bottom:18px"><div class="panel-head"><div><h2>🕹 AWP settimanali</h2><p>Borderò settimanali · attribuiti al mese della data finale</p></div><span class="pill">${rows.length===1?'1 settimana':rows.length+' settimane'}</span></div>
+    ${rows.map(x=>`<div class="history-summary" style="margin:0 0 10px"><div><span>Periodo</span><strong>${dmy(x.dal)} → ${dmy(x.al)}</strong></div><div><span>Raccolta</span><strong>${eur(x.raccolta)}</strong></div><div><span>Vincite</span><strong>${eur(x.vincite)}</strong></div><div><span>Corrispettivo</span><strong class="positive">${eur(x.corrispettivo)}</strong></div></div>`).join('')}
+  </section>`;
+}
+
 function renderTelegramReadinessMaster(){
   const host=$('#telegramReadinessMaster');
   if(!host)return;
@@ -405,6 +457,7 @@ function renderDashboard(){
   </div>`;
 
   renderUtileDashboard(p);
+  renderAwpWeeklyDashboard();
   renderTelegramReadinessMaster();
   drawTrend(p.records);
 }
@@ -430,7 +483,7 @@ function renderHistory(){
   const month=$('#historyMonth').value||currentMonth;
   const rs=[...db.records].filter(r=>r.data.startsWith(month)).sort((a,b)=>b.data.localeCompare(a.data));
   const total=aggregate(rs),online=onlineTotal(total);
-  $('#historyList').innerHTML=renderUtileHistory(month)+`<div class="history-summary">
+  $('#historyList').innerHTML=renderUtileHistory(month)+renderAwpWeeklyHistory(month)+`<div class="history-summary">
     <div><span>Periodo</span><strong>${monthLabel(month)}</strong></div><div><span>Giornate</span><strong>${rs.length}</strong></div>
     <div><span>Sport · Giocato</span><strong class="neutral-value">${eur(total.cats.sp.g)}</strong></div>
     <div><span>Virtual · Giocato</span><strong class="neutral-value">${eur(total.cats.vt.g)}</strong></div>
@@ -631,8 +684,10 @@ async function fetchLatestGithubDb(){
   if(!remoteDb || !Array.isArray(remoteDb.records)) throw new Error('data.json remoto non valido');
   remoteDb.settings=remoteDb.settings||{};
   remoteDb.utileCumulativo=Array.isArray(remoteDb.utileCumulativo)?remoteDb.utileCumulativo:[];
+  remoteDb.awpSettimanale=Array.isArray(remoteDb.awpSettimanale)?remoteDb.awpSettimanale:[];
   remoteDb.records.sort((a,b)=>a.data.localeCompare(b.data));
   remoteDb.utileCumulativo.sort((a,b)=>a.data.localeCompare(b.data));
+  remoteDb.awpSettimanale.sort((a,b)=>a.al.localeCompare(b.al));
   return {remoteDb,sha:info.sha,api,headers};
 }
 async function pushDataToGithubMerged(rec){
@@ -681,6 +736,74 @@ async function pushUtileToGithubMerged(item){
   })});
   if(!put.ok){let msg='';try{msg=(await put.json()).message||''}catch{};throw new Error(`GitHub PUT ${put.status}${msg?': '+msg:''}`)}
   return remoteDb;
+}
+
+function awpWeeklyFormItem(){
+  const dal=$('#awpDal')?.value||'', al=$('#awpAl')?.value||'';
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(dal)||!/^\d{4}-\d{2}-\d{2}$/.test(al)) throw new Error('Inserisci il periodo AWP completo.');
+  if(dal>al) throw new Error('La data iniziale AWP non può essere successiva alla data finale.');
+  const rawR=$('#awpRaccolta')?.value?.trim()||'',rawV=$('#awpVincite')?.value?.trim()||'',rawC=$('#awpCorrispettivo')?.value?.trim()||'';
+  if(!rawR||!rawV||!rawC) throw new Error('Compila Raccolta, Vincite e Corrispettivo.');
+  return {dal,al,raccolta:num(rawR),vincite:num(rawV),corrispettivo:num(rawC),aggiornato:new Date().toISOString()};
+}
+function fillAwpWeeklyForm(x){
+  if(!x)return;
+  $('#awpDal').value=x.dal||''; $('#awpAl').value=x.al||'';
+  setVal('awpRaccolta',x.raccolta); setVal('awpVincite',x.vincite); setVal('awpCorrispettivo',x.corrispettivo);
+}
+async function saveAwpWeekly(){
+  if(!isMaster())return;
+  try{
+    const item=awpWeeklyFormItem();
+    $('#saveAwpWeeklyBtn').disabled=true; $('#awpWeeklyStatus').textContent='Salvataggio AWP su GitHub...';
+    const {remoteDb,sha,api,headers}=await fetchLatestGithubDb();
+    remoteDb.awpSettimanale=Array.isArray(remoteDb.awpSettimanale)?remoteDb.awpSettimanale:[];
+    const idx=remoteDb.awpSettimanale.findIndex(x=>x.dal===item.dal&&x.al===item.al);
+    if(idx>=0&&!confirm(`Il periodo AWP ${dmy(item.dal)} → ${dmy(item.al)} esiste già. Vuoi sovrascriverlo?`)){
+      $('#awpWeeklyStatus').textContent='Salvataggio annullato.';return;
+    }
+    if(idx>=0) remoteDb.awpSettimanale[idx]={...remoteDb.awpSettimanale[idx],...item};
+    else remoteDb.awpSettimanale.push(item);
+    remoteDb.awpSettimanale.sort((a,b)=>a.al.localeCompare(b.al));
+    const content=btoa(unescape(encodeURIComponent(JSON.stringify(remoteDb,null,2))));
+    const put=await fetch(api,{method:'PUT',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify({
+      message:`Dashboard: AWP settimanale ${item.dal} - ${item.al}`,content,sha
+    })});
+    if(!put.ok){let msg='';try{msg=(await put.json()).message||''}catch{};throw new Error(`GitHub PUT ${put.status}${msg?': '+msg:''}`)}
+    db=remoteDb; currentMonth=item.al.slice(0,7); $('#historyMonth').value=currentMonth;
+    $('#awpWeeklyStatus').textContent='AWP settimanale salvata ✓';
+    renderDashboard(); if($('#historyView').classList.contains('active'))renderHistory();
+  }catch(e){console.error(e);$('#awpWeeklyStatus').textContent='Errore: '+e.message}
+  finally{$('#saveAwpWeeklyBtn').disabled=false}
+}
+async function loadAwpWeekly(){
+  const dal=$('#awpDal')?.value||'',al=$('#awpAl')?.value||'';
+  let item=null;
+  if(dal&&al)item=awpWeeklySeries().find(x=>x.dal===dal&&x.al===al);
+  else if(al)item=awpWeeklySeries().find(x=>x.al===al);
+  if(!item){$('#awpWeeklyStatus').textContent='Periodo AWP non trovato.';return}
+  fillAwpWeeklyForm(item);$('#awpWeeklyStatus').textContent='Periodo AWP caricato.';
+}
+async function deleteAwpWeekly(){
+  if(!isMaster())return;
+  const dal=$('#awpDal')?.value||'',al=$('#awpAl')?.value||'';
+  if(!dal||!al){$('#awpWeeklyStatus').textContent='Inserisci il periodo da eliminare.';return}
+  try{
+    $('#deleteAwpWeeklyBtn').disabled=true;
+    const {remoteDb,sha,api,headers}=await fetchLatestGithubDb();
+    remoteDb.awpSettimanale=Array.isArray(remoteDb.awpSettimanale)?remoteDb.awpSettimanale:[];
+    const idx=remoteDb.awpSettimanale.findIndex(x=>x.dal===dal&&x.al===al);
+    if(idx<0){db=remoteDb;$('#awpWeeklyStatus').textContent='Periodo AWP non trovato.';return}
+    if(!confirm(`Eliminare il periodo AWP ${dmy(dal)} → ${dmy(al)}?`)){ $('#awpWeeklyStatus').textContent='Eliminazione annullata.';return}
+    remoteDb.awpSettimanale.splice(idx,1);
+    const content=btoa(unescape(encodeURIComponent(JSON.stringify(remoteDb,null,2))));
+    const put=await fetch(api,{method:'PUT',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify({
+      message:`Dashboard: elimina AWP ${dal} - ${al}`,content,sha
+    })});
+    if(!put.ok){let msg='';try{msg=(await put.json()).message||''}catch{};throw new Error(`GitHub PUT ${put.status}${msg?': '+msg:''}`)}
+    db=remoteDb; $('#awpWeeklyStatus').textContent='Periodo AWP eliminato ✓'; renderDashboard();renderHistory();
+  }catch(e){console.error(e);$('#awpWeeklyStatus').textContent='Errore: '+e.message}
+  finally{$('#deleteAwpWeeklyBtn').disabled=false}
 }
 
 async function saveEntry(){
@@ -811,6 +934,7 @@ function validateBackup(x){
   if(!x||typeof x!=='object'||!Array.isArray(x.records)||!x.settings||typeof x.settings!=='object')throw new Error('Backup non valido: servono records e settings.');
   for(const r of x.records){if(!r||typeof r.data!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(r.data))throw new Error('Backup non valido: record con data errata.')}
   if(x.utileCumulativo!==undefined&&!Array.isArray(x.utileCumulativo))throw new Error('Backup non valido: utileCumulativo deve essere un elenco.');
+  if(x.awpSettimanale!==undefined&&!Array.isArray(x.awpSettimanale))throw new Error('Backup non valido: awpSettimanale deve essere un elenco.');
   return true;
 }
 async function importBackup(){
@@ -826,7 +950,9 @@ async function importBackup(){
     $('#importBackupBtn').disabled=true;$('#backupStatus').textContent='Ripristino su GitHub...';
     imported.records.sort((a,b)=>a.data.localeCompare(b.data));
     imported.utileCumulativo=Array.isArray(imported.utileCumulativo)?imported.utileCumulativo:[];
+    imported.awpSettimanale=Array.isArray(imported.awpSettimanale)?imported.awpSettimanale:[];
     imported.utileCumulativo.sort((a,b)=>a.data.localeCompare(b.data));
+    imported.awpSettimanale.sort((a,b)=>a.al.localeCompare(b.al));
     await pushWholeDb(imported,'Dashboard: ripristino backup database');
     db=imported;currentMonth=db.records.length?db.records.at(-1).data.slice(0,7):currentMonth;
     renderDashboard();renderHistory();loadRateFields();
@@ -1040,6 +1166,9 @@ $('#masterLogoutBtn').addEventListener('click',masterLogout);
 $('#loadDayBtn').addEventListener('click',loadDayToForm);
 $('#saveEntryBtn').addEventListener('click',saveEntry);
 $('#deleteEntryBtn').addEventListener('click',deleteEntry);
+$('#saveAwpWeeklyBtn').addEventListener('click',saveAwpWeekly);
+$('#loadAwpWeeklyBtn').addEventListener('click',loadAwpWeekly);
+$('#deleteAwpWeeklyBtn').addEventListener('click',deleteAwpWeekly);
 $('#startQrBtn').addEventListener('click',startQr);
 $('#stopQrBtn').addEventListener('click',stopQr);
 $('#applyQrBtn').addEventListener('click',()=>applyQrPayload($('#qrPayload').value));
@@ -1054,13 +1183,15 @@ async function loadData(){
     const {remoteDb}=await fetchLatestGithubDb();
     db=remoteDb;
   }else{
-    db={records:[],settings:{},utileCumulativo:[]};
+    db={records:[],settings:{},utileCumulativo:[],awpSettimanale:[]};
     privateDataLocked=true;
   }
   db.utileCumulativo=Array.isArray(db.utileCumulativo)?db.utileCumulativo:[];
+  db.awpSettimanale=Array.isArray(db.awpSettimanale)?db.awpSettimanale:[];
   db.records=Array.isArray(db.records)?db.records:[];
   db.records.sort((a,b)=>a.data.localeCompare(b.data));
   db.utileCumulativo.sort((a,b)=>a.data.localeCompare(b.data));
+  db.awpSettimanale.sort((a,b)=>a.al.localeCompare(b.al));
   currentMonth=db.records.length?db.records.at(-1).data.slice(0,7):new Date().toISOString().slice(0,7);
   $('#historyMonth').value=currentMonth;
   renderPeriodExtra();renderDashboard();

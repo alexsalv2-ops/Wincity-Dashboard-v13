@@ -1,4 +1,4 @@
-// v13.31 - AWP settimanali manuali (periodo, raccolta, vincite, corrispettivo)
+// v13.32 - AWP settimanali: mese dalla data iniziale + import OCR da foto
 
 // v13.14 - legenda grafico garantita anche su browser/cache precedenti
 (function ensureTrendLegend(){
@@ -338,31 +338,34 @@ function awpWeeklyBounds(){
   return {from:m+'-01',to:m+'-31'};
 }
 function awpWeeklyForCurrentPeriod(){
-  const all=[...awpWeeklySeries()].sort((a,b)=>a.al.localeCompare(b.al));
+  const all=[...awpWeeklySeries()].sort((a,b)=>a.dal.localeCompare(b.dal));
   const {from,to}=awpWeeklyBounds();
   if(!from||!to)return all;
-  return all.filter(x=>x.al>=from&&x.al<=to);
+  // Regola contabile scelta: il borderò appartiene al periodo in cui INIZIA.
+  return all.filter(x=>x.dal>=from&&x.dal<=to);
 }
 function renderAwpWeeklyDashboard(){
   const host=$('#awpSettimanaleBody'),badge=$('#awpSettimanaleCount');
   if(!host||!badge)return;
-  const rows=awpWeeklyForCurrentPeriod().sort((a,b)=>b.al.localeCompare(a.al));
+  const rows=awpWeeklyForCurrentPeriod().sort((a,b)=>b.dal.localeCompare(a.dal));
   badge.textContent=rows.length===1?'1 settimana':`${rows.length} settimane`;
   if(!rows.length){
-    host.innerHTML='<div style="padding:18px 4px;color:#73808d">Nessun dato AWP settimanale registrato per il periodo selezionato.</div>';
+    host.innerHTML='<div style="padding:8px 2px;color:#73808d;font-size:12px">Nessun dato AWP nel periodo selezionato.</div>';
     return;
   }
-  host.innerHTML=rows.map(x=>`<div class="history-summary" style="margin:0 0 10px">
-    <div><span>Periodo</span><strong>${dmy(x.dal)} → ${dmy(x.al)}</strong></div>
-    <div><span>Raccolta</span><strong class="neutral-value">${eur(x.raccolta)}</strong></div>
-    <div><span>Vincite</span><strong class="neutral-value">${eur(x.vincite)}</strong></div>
-    <div><span>Corrispettivo</span><strong class="positive">${eur(x.corrispettivo)}</strong></div>
+  host.innerHTML=rows.map(x=>`<div class="awp-week-row">
+    <div class="awp-week-period">${dmy(x.dal)} → ${dmy(x.al)}</div>
+    <div class="kv">
+      <div><span>Raccolta</span><b>${eur(x.raccolta)}</b></div>
+      <div><span>Vincite</span><b>${eur(x.vincite)}</b></div>
+      <div><span>Corrispettivo</span><b class="positive">${eur(x.corrispettivo)}</b></div>
+    </div>
   </div>`).join('');
 }
 function renderAwpWeeklyHistory(month){
-  const rows=[...awpWeeklySeries()].filter(x=>x.al.startsWith(month)).sort((a,b)=>b.al.localeCompare(a.al));
+  const rows=[...awpWeeklySeries()].filter(x=>x.dal.startsWith(month)).sort((a,b)=>b.dal.localeCompare(a.dal));
   if(!rows.length)return '';
-  return `<section class="panel" style="margin-bottom:18px"><div class="panel-head"><div><h2>🕹 AWP settimanali</h2><p>Borderò settimanali · attribuiti al mese della data finale</p></div><span class="pill">${rows.length===1?'1 settimana':rows.length+' settimane'}</span></div>
+  return `<section class="panel" style="margin-bottom:18px"><div class="panel-head"><div><h2>🕹 AWP settimanali</h2><p>Borderò settimanali · attribuiti al mese della data iniziale</p></div><span class="pill">${rows.length===1?'1 settimana':rows.length+' settimane'}</span></div>
     ${rows.map(x=>`<div class="history-summary" style="margin:0 0 10px"><div><span>Periodo</span><strong>${dmy(x.dal)} → ${dmy(x.al)}</strong></div><div><span>Raccolta</span><strong>${eur(x.raccolta)}</strong></div><div><span>Vincite</span><strong>${eur(x.vincite)}</strong></div><div><span>Corrispettivo</span><strong class="positive">${eur(x.corrispettivo)}</strong></div></div>`).join('')}
   </section>`;
 }
@@ -738,6 +741,100 @@ async function pushUtileToGithubMerged(item){
   return remoteDb;
 }
 
+function parseOcrItalianAmount(raw){
+  let s=String(raw||'').trim().replace(/[€+]/g,'').replace(/\s/g,'');
+  if(!s)return null;
+  // OCR: tollera punto/virgola come separatore decimale finale.
+  const m=s.match(/-?\d[\d.]*[,.]\d{2}$/);
+  if(!m)return null;
+  s=m[0];
+  const lastComma=s.lastIndexOf(','),lastDot=s.lastIndexOf('.');
+  const decPos=Math.max(lastComma,lastDot);
+  const intPart=s.slice(0,decPos).replace(/[.,]/g,'');
+  const decPart=s.slice(decPos+1);
+  const n=Number(intPart+'.'+decPart);
+  return Number.isFinite(n)?n:null;
+}
+function ocrIsoDate(d,m,y){
+  d=Number(d);m=Number(m);y=Number(y);
+  if(y<2000||y>2100||m<1||m>12||d<1||d>31)return null;
+  return `${String(y).padStart(4,'0')}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+}
+function extractAwpFromOcr(text){
+  const raw=String(text||'').replace(/\r/g,'');
+  const flat=raw.replace(/\n+/g,' ').replace(/\s+/g,' ').trim();
+  const lines=raw.split('\n').map(x=>x.replace(/\s+/g,' ').trim()).filter(Boolean);
+
+  let dal=null,al=null;
+  const period=flat.match(/dal\s*(\d{1,2})\D+(\d{1,2})\D+(20\d{2})\s+al\s*(\d{1,2})\D+(\d{1,2})\D+(20\d{2})/i);
+  if(period){
+    dal=ocrIsoDate(period[1],period[2],period[3]);
+    al=ocrIsoDate(period[4],period[5],period[6]);
+  }else{
+    const dates=[...flat.matchAll(/\b(\d{1,2})[-\/.](\d{1,2})[-\/.](20\d{2})\b/g)];
+    if(dates.length>=2){
+      dal=ocrIsoDate(dates[0][1],dates[0][2],dates[0][3]);
+      al=ocrIsoDate(dates[1][1],dates[1][2],dates[1][3]);
+    }
+  }
+
+  const moneyFromNearby=(matcher)=>{
+    for(let i=0;i<lines.length;i++){
+      const low=lines[i].toLowerCase();
+      if(!matcher(low))continue;
+      const nearby=[lines[i],lines[i+1]||'',lines[i+2]||''].join(' ');
+      const vals=[...nearby.matchAll(/-?\d[\d.\s]*[,.]\d{2}\+?/g)].map(m=>parseOcrItalianAmount(m[0])).filter(v=>v!==null);
+      if(vals.length)return vals.at(-1);
+    }
+    return null;
+  };
+
+  const raccolta=moneyFromNearby(s=>s.includes('raccolta')&&(s.includes('period')||s.includes('totale')));
+  const vincite=moneyFromNearby(s=>(s.includes('vincit')||s.includes('vinc1t'))&&(s.includes('period')||s.includes('totale')));
+  const corrispettivo=moneyFromNearby(s=>s.includes('corrispettiv')||s.includes('esercente'));
+
+  return {dal,al,raccolta,vincite,corrispettivo};
+}
+async function readAwpPhoto(file){
+  if(!file)return;
+  const status=$('#awpOcrStatus');
+  try{
+    if(typeof Tesseract==='undefined')throw new Error('Modulo OCR non disponibile. Ricarica la pagina con connessione Internet.');
+    $('#awpPhotoBtn').disabled=true;
+    if(status)status.textContent='Preparazione foto...';
+
+    const result=await Tesseract.recognize(file,'ita',{
+      logger:m=>{
+        if(!status)return;
+        if(m.status==='recognizing text') status.textContent=`Lettura borderò... ${Math.round((m.progress||0)*100)}%`;
+        else if(m.status) status.textContent='OCR: '+m.status;
+      }
+    });
+    const found=extractAwpFromOcr(result?.data?.text||'');
+    const missing=[];
+    if(found.dal)$('#awpDal').value=found.dal;else missing.push('data iniziale');
+    if(found.al)$('#awpAl').value=found.al;else missing.push('data finale');
+    if(found.raccolta!==null)setVal('awpRaccolta',found.raccolta);else missing.push('raccolta');
+    if(found.vincite!==null)setVal('awpVincite',found.vincite);else missing.push('vincite');
+    if(found.corrispettivo!==null)setVal('awpCorrispettivo',found.corrispettivo);else missing.push('corrispettivo');
+
+    if(missing.length){
+      if(status)status.textContent='Foto letta, ma non ho riconosciuto: '+missing.join(', ')+'. Controlla e completa a mano.';
+    }else{
+      if(status)status.textContent=`Foto letta ✓ ${dmy(found.dal)} → ${dmy(found.al)} · Raccolta ${eur(found.raccolta)} · Vincite ${eur(found.vincite)} · Corrispettivo ${eur(found.corrispettivo)}. Controlla e premi Salva.`;
+    }
+  }catch(e){
+    console.error(e);
+    if(status)status.textContent='Errore lettura foto: '+e.message;
+  }finally{
+    $('#awpPhotoBtn').disabled=false;
+    const input=$('#awpPhotoInput');if(input)input.value='';
+  }
+}
+function chooseAwpPhoto(){
+  const input=$('#awpPhotoInput');if(input)input.click();
+}
+
 function awpWeeklyFormItem(){
   const dal=$('#awpDal')?.value||'', al=$('#awpAl')?.value||'';
   if(!/^\d{4}-\d{2}-\d{2}$/.test(dal)||!/^\d{4}-\d{2}-\d{2}$/.test(al)) throw new Error('Inserisci il periodo AWP completo.');
@@ -764,13 +861,13 @@ async function saveAwpWeekly(){
     }
     if(idx>=0) remoteDb.awpSettimanale[idx]={...remoteDb.awpSettimanale[idx],...item};
     else remoteDb.awpSettimanale.push(item);
-    remoteDb.awpSettimanale.sort((a,b)=>a.al.localeCompare(b.al));
+    remoteDb.awpSettimanale.sort((a,b)=>a.dal.localeCompare(b.dal));
     const content=btoa(unescape(encodeURIComponent(JSON.stringify(remoteDb,null,2))));
     const put=await fetch(api,{method:'PUT',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify({
       message:`Dashboard: AWP settimanale ${item.dal} - ${item.al}`,content,sha
     })});
     if(!put.ok){let msg='';try{msg=(await put.json()).message||''}catch{};throw new Error(`GitHub PUT ${put.status}${msg?': '+msg:''}`)}
-    db=remoteDb; currentMonth=item.al.slice(0,7); $('#historyMonth').value=currentMonth;
+    db=remoteDb; currentMonth=item.dal.slice(0,7); $('#historyMonth').value=currentMonth;
     $('#awpWeeklyStatus').textContent='AWP settimanale salvata ✓';
     renderDashboard(); if($('#historyView').classList.contains('active'))renderHistory();
   }catch(e){console.error(e);$('#awpWeeklyStatus').textContent='Errore: '+e.message}
@@ -952,7 +1049,7 @@ async function importBackup(){
     imported.utileCumulativo=Array.isArray(imported.utileCumulativo)?imported.utileCumulativo:[];
     imported.awpSettimanale=Array.isArray(imported.awpSettimanale)?imported.awpSettimanale:[];
     imported.utileCumulativo.sort((a,b)=>a.data.localeCompare(b.data));
-    imported.awpSettimanale.sort((a,b)=>a.al.localeCompare(b.al));
+    imported.awpSettimanale.sort((a,b)=>a.dal.localeCompare(b.dal));
     await pushWholeDb(imported,'Dashboard: ripristino backup database');
     db=imported;currentMonth=db.records.length?db.records.at(-1).data.slice(0,7):currentMonth;
     renderDashboard();renderHistory();loadRateFields();
@@ -1169,6 +1266,8 @@ $('#deleteEntryBtn').addEventListener('click',deleteEntry);
 $('#saveAwpWeeklyBtn').addEventListener('click',saveAwpWeekly);
 $('#loadAwpWeeklyBtn').addEventListener('click',loadAwpWeekly);
 $('#deleteAwpWeeklyBtn').addEventListener('click',deleteAwpWeekly);
+$('#awpPhotoBtn').addEventListener('click',chooseAwpPhoto);
+$('#awpPhotoInput').addEventListener('change',e=>readAwpPhoto(e.target.files?.[0]));
 $('#startQrBtn').addEventListener('click',startQr);
 $('#stopQrBtn').addEventListener('click',stopQr);
 $('#applyQrBtn').addEventListener('click',()=>applyQrPayload($('#qrPayload').value));
@@ -1191,7 +1290,7 @@ async function loadData(){
   db.records=Array.isArray(db.records)?db.records:[];
   db.records.sort((a,b)=>a.data.localeCompare(b.data));
   db.utileCumulativo.sort((a,b)=>a.data.localeCompare(b.data));
-  db.awpSettimanale.sort((a,b)=>a.al.localeCompare(b.al));
+  db.awpSettimanale.sort((a,b)=>a.dal.localeCompare(b.dal));
   currentMonth=db.records.length?db.records.at(-1).data.slice(0,7):new Date().toISOString().slice(0,7);
   $('#historyMonth').value=currentMonth;
   renderPeriodExtra();renderDashboard();

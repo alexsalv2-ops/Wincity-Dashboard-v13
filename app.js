@@ -1,4 +1,4 @@
-// v13.29 - database privato GitHub; interfaccia pubblica senza data.json
+// v13.30 - Utile e chiusura Telegram allineati alla stessa data
 
 // v13.14 - legenda grafico garantita anche su browser/cache precedenti
 (function ensureTrendLegend(){
@@ -247,7 +247,7 @@ function hasNumericField(obj,key){
   return !!obj && obj[key]!==null && obj[key]!==undefined && obj[key]!=='' && Number.isFinite(Number(obj[key]));
 }
 function closureReadinessForUtile(u){
-  const refDate=previousIsoDay(u.data);
+  const refDate=u.data;
   const rec=db.records.find(r=>r.data===refDate);
   const missing=[];
   if(!hasNumericField(rec,'cassaReale')) missing.push('Cassa reale');
@@ -695,7 +695,7 @@ async function saveEntry(){
 
     db=savedDb; currentMonth=rec.data.slice(0,7);
     $('#historyMonth').value=currentMonth;
-    const linkedUtile=[...utileSeries()].sort((a,b)=>a.data.localeCompare(b.data)).reverse().find(u=>previousIsoDay(u.data)===rec.data);
+    const linkedUtile=[...utileSeries()].sort((a,b)=>a.data.localeCompare(b.data)).reverse().find(u=>u.data===rec.data);
     if(linkedUtile){
       const c=closureReadinessForUtile(linkedUtile);
       $('#saveStatus').textContent=c.ready?'Salvato ✓ · Riepilogo Telegram pronto':'Salvato ✓ · Telegram in attesa: '+c.missing.join(', ');

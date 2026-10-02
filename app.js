@@ -1,4 +1,4 @@
-// v13.44 - OCR dati AWP: isola soltanto i cinque totali finali
+// v13.45 - OCR dati AWP: legge i cinque totali riga per riga
 
 // v13.14 - legenda grafico garantita anche su browser/cache precedenti
 (function ensureTrendLegend(){
@@ -986,6 +986,28 @@ function prepareAwpNumbersCrop(bmp,xPct,yPct,wPct,hPct,targetWidth=1700){
   return canvas;
 }
 
+function cropCanvasRow(source,yPct,hPct,targetWidth=1500){
+  const sy=Math.max(0,Math.round(source.height*yPct));
+  const sh=Math.min(source.height-sy,Math.round(source.height*hPct));
+  const scale=Math.min(4,Math.max(1,targetWidth/Math.max(1,source.width)));
+  const canvas=document.createElement('canvas');
+  canvas.width=Math.round(source.width*scale);
+  canvas.height=Math.round(sh*scale);
+  const ctx=canvas.getContext('2d',{willReadFrequently:true});
+  ctx.filter='grayscale(1) blur(0.5px) contrast(1.75) brightness(1.08)';
+  ctx.drawImage(source,0,sy,source.width,sh,0,0,canvas.width,canvas.height);
+  ctx.filter='none';
+  return canvas;
+}
+function parseSingleAwpNumber(text){
+  const raw=String(text||'').replace(/\s/g,'');
+  const matches=[...raw.matchAll(/\d[\d.,]*\d|\d/g)];
+  if(!matches.length)return null;
+  // Usa la sequenza numerica più lunga: in ogni ritaglio c'è un solo importo.
+  matches.sort((a,b)=>b[0].length-a[0].length);
+  return parseOcrItalianAmount(matches[0][0]);
+}
+
 async function recognizeAwpCanvas(canvas,{psm='11',whitelist=''},status,label){
   let worker=null;
   try{
@@ -1099,6 +1121,7 @@ async function readAwpPeriodPhoto(file){
 async function readAwpDataPhoto(file){
   if(!file)return;
   const status=$('#awpOcrStatus');
+  let worker=null;
   try{
     if(typeof Tesseract==='undefined')throw new Error('Modulo OCR non disponibile. Ricarica la pagina con connessione Internet.');
     $('#awpDataPhotoBtn').disabled=true;
@@ -1107,48 +1130,79 @@ async function readAwpDataPhoto(file){
 
     const bmp=await createImageBitmap(file);
 
-    // Sulla seconda schermata leggiamo SOLO la colonna numerica in basso a destra.
-    // Nella foto reale questa zona restituisce: ... 527,00 / 4.079,00 /
-    // 2.854,00 / 1.225,00 / 83,65 / ...
-    const numeric=prepareAwpNumbersCrop(bmp,0.68,0.62,0.16,0.17,1700);
-    const numText=await recognizeAwpCanvas(numeric,{
-      psm:'6',
-      whitelist:'0123456789.,+ '
-    },status,'Lettura valori AWP');
-    addAwpOcrDiagnostic('Data','Dati AWP · colonna totali',numeric,numText);
+    // Dalla diagnostica la colonna è corretta: il problema è Tesseract quando
+    // deve leggere più numeri insieme. Isoliamo quindi SOLO i 5 totali finali
+    // e li leggiamo uno per riga.
+    const totals=prepareAwpScreenCrop(bmp,0.64,0.66,0.22,0.145,1900);
+    addAwpOcrDiagnostic('Data','Dati AWP · cinque totali finali',totals,'Lettura riga per riga…');
 
-    let inferred=inferAwpSummaryByMath(numText);
+    const rowDefs=[
+      {name:'Raccolta', y:0.00, h:0.20},
+      {name:'Vincite', y:0.18, h:0.20},
+      {name:'Cassa', y:0.36, h:0.20},
+      {name:'Corrispettivo', y:0.54, h:0.20},
+      {name:'Totale prelevato', y:0.72, h:0.24}
+    ];
 
-    // Fallback più largo/basso per foto leggermente spostate.
-    if(!inferred){
-      const numericWide=prepareAwpNumbersCrop(bmp,0.64,0.57,0.23,0.25,1900);
-      const wideText=await recognizeAwpCanvas(numericWide,{
-        psm:'11',
-        whitelist:'0123456789.,+ '
-      },status,'Secondo tentativo valori AWP');
-      addAwpOcrDiagnostic('Data','Dati AWP · colonna totali ampia',numericWide,wideText);
-      inferred=inferAwpSummaryByMath(numText+'\n'+wideText);
+    worker=await Tesseract.createWorker('eng',1,{
+      logger:m=>{
+        if(!status)return;
+        if(m.status==='recognizing text')status.textContent=`Lettura valori AWP... ${Math.round((m.progress||0)*100)}%`;
+      }
+    });
+    await worker.setParameters({
+      tessedit_pageseg_mode:'7',
+      tessedit_char_whitelist:'0123456789.,+'
+    });
+
+    const values=[];
+    for(const def of rowDefs){
+      const row=cropCanvasRow(totals,def.y,def.h,1500);
+      const result=await worker.recognize(row);
+      const raw=result?.data?.text||'';
+      const value=parseSingleAwpNumber(raw);
+      values.push(value);
+      addAwpOcrDiagnostic('Data',`Dati AWP · ${def.name}`,row,raw);
     }
 
     try{bmp.close()}catch{}
 
-    if(!inferred){
-      if(status)status.textContent='Non ho riconosciuto i tre valori AWP. Apri Diagnostica OCR e mandami la zona numerica mostrata.';
+    let [raccolta,vincite,cassa,corrispettivo,prelevato]=values;
+
+    // Se una delle cinque letture è imperfetta, ricostruiamo usando le identità
+    // contabili stampate sul borderò.
+    if(raccolta!==null && cassa!==null && (vincite===null || Math.abs((raccolta-vincite)-cassa)>1)){
+      vincite=raccolta-cassa;
+    }
+    if(cassa!==null && prelevato!==null && (corrispettivo===null || Math.abs((cassa-corrispettivo)-prelevato)>1)){
+      corrispettivo=cassa-prelevato;
+    }
+    if(cassa===null && raccolta!==null && vincite!==null)cassa=raccolta-vincite;
+    if(prelevato===null && cassa!==null && corrispettivo!==null)prelevato=cassa-corrispettivo;
+
+    const valid=
+      raccolta!==null && vincite!==null && corrispettivo!==null &&
+      raccolta>0 && vincite>=0 && corrispettivo>=0 &&
+      (cassa===null || Math.abs((raccolta-vincite)-cassa)<=2);
+
+    if(!valid){
+      if(status)status.textContent='Ho isolato correttamente i totali, ma una o più righe OCR non sono ancora affidabili. Apri Diagnostica OCR: ora vedrai ogni numero separato.';
       return;
     }
 
-    setVal('awpRaccolta',inferred.raccolta);
-    setVal('awpVincite',inferred.vincite);
-    setVal('awpCorrispettivo',inferred.corrispettivo);
+    setVal('awpRaccolta',raccolta);
+    setVal('awpVincite',vincite);
+    setVal('awpCorrispettivo',corrispettivo);
 
     const havePeriod=$('#awpDal').value&&$('#awpAl').value;
     if(status)status.textContent=havePeriod
-      ? `Dati AWP letti ✓ Raccolta ${eur(inferred.raccolta)} · Vincite ${eur(inferred.vincite)} · Corrispettivo ${eur(inferred.corrispettivo)}. Controlla e premi Salva.`
-      : `Dati AWP letti ✓ Raccolta ${eur(inferred.raccolta)} · Vincite ${eur(inferred.vincite)} · Corrispettivo ${eur(inferred.corrispettivo)}. Acquisisci anche la foto del periodo.`;
+      ? `Dati AWP letti ✓ Raccolta ${eur(raccolta)} · Vincite ${eur(vincite)} · Corrispettivo ${eur(corrispettivo)}. Controlla e premi Salva.`
+      : `Dati AWP letti ✓ Raccolta ${eur(raccolta)} · Vincite ${eur(vincite)} · Corrispettivo ${eur(corrispettivo)}. Acquisisci anche la foto del periodo.`;
   }catch(e){
     console.error(e);
     if(status)status.textContent='Errore lettura dati AWP: '+e.message;
   }finally{
+    try{if(worker)await worker.terminate()}catch{}
     $('#awpDataPhotoBtn').disabled=false;
     const input=$('#awpDataPhotoInput');if(input)input.value='';
   }

@@ -1,4 +1,4 @@
-// v13.36 - OCR AWP guidato: date in alto + soli importi nella colonna riepilogo
+// v13.37 - OCR AWP: ricostruisce Vincite anche se il numero viene letto male
 
 // v13.14 - legenda grafico garantita anche su browser/cache precedenti
 (function ensureTrendLegend(){
@@ -850,9 +850,9 @@ function inferAwpSummaryByMath(text){
     if(n!==null)vals.push(n);
   }
 
-  // Cerchiamo la sequenza tipica del riepilogo AWP:
-  // Raccolta - Vincite = Cassa
-  // Cassa - Corrispettivo = Totale prelevato
+  // Sequenza tipica:
+  // Raccolta, Vincite, Cassa, Corrispettivo, Totale prelevato.
+  // Prima proviamo la lettura completa.
   const strong=[];
   for(let i=0;i<=vals.length-5;i++){
     const [raccolta,vincite,cassa,corrispettivo,prelevato]=vals.slice(i,i+5);
@@ -866,7 +866,28 @@ function inferAwpSummaryByMath(text){
   }
   if(strong.length)return strong.at(-1);
 
-  // Anche se "Totale prelevato" non viene letto, bastano i primi quattro valori.
+  // Sullo stampato reale Tesseract può leggere, per esempio,
+  // 2.854,00 come 2.854.002. In quel caso la cifra "Vincite" è corrotta,
+  // ma le altre quattro permettono comunque di ricostruirla:
+  // Vincite = Raccolta - Cassa
+  // e Cassa - Corrispettivo = Totale prelevato.
+  const recovered=[];
+  for(let i=0;i<=vals.length-5;i++){
+    const [raccolta,_vinciteLetta,cassa,corrispettivo,prelevato]=vals.slice(i,i+5);
+    if(raccolta<=0||cassa<0||corrispettivo<0||prelevato<0)continue;
+    if(!(raccolta>cassa && cassa>=corrispettivo))continue;
+    const e2=Math.abs((cassa-corrispettivo)-prelevato);
+    if(e2<=1){
+      const vincite=raccolta-cassa;
+      if(vincite>=0 && vincite<=raccolta){
+        recovered.push({raccolta,vincite,cassa,corrispettivo,prelevato,index:i,recovered:true});
+      }
+    }
+  }
+  if(recovered.length)return recovered.at(-1);
+
+  // Se manca la riga del totale prelevato, bastano i primi quattro valori
+  // quando Raccolta - Vincite coincide con Cassa.
   const fallback=[];
   for(let i=0;i<=vals.length-4;i++){
     const [raccolta,vincite,cassa,corrispettivo]=vals.slice(i,i+4);

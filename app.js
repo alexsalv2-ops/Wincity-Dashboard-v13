@@ -1,4 +1,4 @@
-// v13.43 - OCR dati AWP: ritaglio esteso fino a Corrispettivo e Totale prelevato
+// v13.44 - OCR dati AWP: isola soltanto i cinque totali finali
 
 // v13.14 - legenda grafico garantita anche su browser/cache precedenti
 (function ensureTrendLegend(){
@@ -969,6 +969,23 @@ function prepareAwpScreenCrop(bmp,xPct,yPct,wPct,hPct,targetWidth=2200){
   return canvas;
 }
 
+function prepareAwpNumbersCrop(bmp,xPct,yPct,wPct,hPct,targetWidth=1700){
+  const sx=Math.max(0,Math.round(bmp.width*xPct));
+  const sy=Math.max(0,Math.round(bmp.height*yPct));
+  const sw=Math.min(bmp.width-sx,Math.round(bmp.width*wPct));
+  const sh=Math.min(bmp.height-sy,Math.round(bmp.height*hPct));
+  const scale=Math.min(4,Math.max(2,targetWidth/Math.max(1,sw)));
+  const canvas=document.createElement('canvas');
+  canvas.width=Math.round(sw*scale);
+  canvas.height=Math.round(sh*scale);
+  const ctx=canvas.getContext('2d',{willReadFrequently:true});
+  // Il leggero blur riduce il moiré del monitor senza perdere i numeri.
+  ctx.filter='grayscale(1) blur(0.7px) contrast(1.55) brightness(1.08)';
+  ctx.drawImage(bmp,sx,sy,sw,sh,0,0,canvas.width,canvas.height);
+  ctx.filter='none';
+  return canvas;
+}
+
 async function recognizeAwpCanvas(canvas,{psm='11',whitelist=''},status,label){
   let worker=null;
   try{
@@ -1093,9 +1110,9 @@ async function readAwpDataPhoto(file){
     // Sulla seconda schermata leggiamo SOLO la colonna numerica in basso a destra.
     // Nella foto reale questa zona restituisce: ... 527,00 / 4.079,00 /
     // 2.854,00 / 1.225,00 / 83,65 / ...
-    const numeric=prepareAwpScreenCrop(bmp,0.58,0.45,0.23,0.32,2200);
+    const numeric=prepareAwpNumbersCrop(bmp,0.68,0.62,0.16,0.17,1700);
     const numText=await recognizeAwpCanvas(numeric,{
-      psm:'11',
+      psm:'6',
       whitelist:'0123456789.,+ '
     },status,'Lettura valori AWP');
     addAwpOcrDiagnostic('Data','Dati AWP · colonna totali',numeric,numText);
@@ -1104,7 +1121,7 @@ async function readAwpDataPhoto(file){
 
     // Fallback più largo/basso per foto leggermente spostate.
     if(!inferred){
-      const numericWide=prepareAwpScreenCrop(bmp,0.54,0.42,0.29,0.40,2400);
+      const numericWide=prepareAwpNumbersCrop(bmp,0.64,0.57,0.23,0.25,1900);
       const wideText=await recognizeAwpCanvas(numericWide,{
         psm:'11',
         whitelist:'0123456789.,+ '

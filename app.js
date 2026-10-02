@@ -1,4 +1,4 @@
-// v13.52 - OCR AWP: righe totali riallineate sulla foto reale + campi Giocato/Pagato/Corrispettivo
+// v13.53 - OCR AWP diretto: Giocato / Pagato / Corrispettivo esercente
 
 // v13.14 - legenda grafico garantita anche su browser/cache precedenti
 (function ensureTrendLegend(){
@@ -1416,26 +1416,23 @@ async function readAwpDataPhoto(file){
   try{
     if(typeof Tesseract==='undefined')throw new Error('Modulo OCR non disponibile. Ricarica la pagina con connessione Internet.');
     $('#awpDataPhotoBtn').disabled=true;
-    if(status)status.textContent='Lettura schermata dati AWP...';
+    if(status)status.textContent='Lettura AWP giocato, pagato e corrispettivo...';
     clearAwpOcrDiagnostic('Data');
 
     bmp=await createImageBitmap(file);
 
-    // v13.50: manteniamo ESATTAMENTE la zona corretta trovata nella v13.49.
-    // La differenza è che non chiediamo più a Tesseract di leggere i 5 importi
-    // come un unico blocco: li separiamo e li leggiamo uno alla volta.
-    const numeric=prepareAwpNativeNumbersCrop(bmp,0.56,0.46,0.31,0.20);
-    addAwpOcrDiagnostic('Data','Dati AWP · zona totali v13.49',numeric,'Separazione automatica delle 5 righe…');
-
-    // Coordinate misurate sulla foto reale del borderò.
-    // Nel ritaglio v13.49 i totali NON iniziano in alto: prima ci sono ancora
-    // alcune righe degli apparecchi. I cinque totali iniziano circa al 31%.
-    const rowDefs=[
-      {name:'AWP giocato',y:0.31,h:0.12},
-      {name:'AWP pagato',y:0.41,h:0.12},
-      {name:'Cassa',y:0.50,h:0.12},
-      {name:'Corrispettivo esercente',y:0.60,h:0.12},
-      {name:'Totale prelevato',y:0.69,h:0.15}
+    // v13.53: niente più ricerca fra tutti i numeri della tabella.
+    // Leggiamo direttamente le tre righe finali del borderò mostrate nella foto:
+    // Raccolta totale di periodo = AWP giocato
+    // Vincite totali di periodo = AWP pagato
+    // Corrispettivo esercente = corrispettivo
+    //
+    // La colonna numerica destra è isolata per non includere i progressivi
+    // delle macchine presenti nelle colonne precedenti.
+    const defs=[
+      {key:'giocato',name:'AWP giocato',x:0.59,y:0.525,w:0.20,h:0.023},
+      {key:'pagato',name:'AWP pagato',x:0.59,y:0.543,w:0.20,h:0.023},
+      {key:'corrispettivo',name:'Corrispettivo esercente',x:0.59,y:0.578,w:0.20,h:0.023}
     ];
 
     worker=await Tesseract.createWorker('eng',1,{
@@ -1449,72 +1446,50 @@ async function readAwpDataPhoto(file){
       tessedit_char_whitelist:'0123456789.,+'
     });
 
-    const rows=[],softCanvases=[];
-    for(let i=0;i<rowDefs.length;i++){
-      const def=rowDefs[i];
-      const row=cropCanvasRow(numeric,def.y,def.h,1350);
-      softCanvases.push(row);
+    const values={};
+    for(const def of defs){
+      const row=prepareAwpNativeNumbersCrop(bmp,def.x,def.y,def.w,def.h);
       const result=await worker.recognize(row);
       const raw=result?.data?.text||'';
-      rows[i]=awpNumberCandidates(raw);
-      const list=rows[i].map(x=>x.value.toLocaleString('it-IT',{minimumFractionDigits:2,maximumFractionDigits:2})).join(' · ');
-      addAwpOcrDiagnostic('Data',`Dati AWP · ${def.name}`,row,`${raw.trim()||'(nessun testo)'}\nCandidati: ${list||'nessuno'}`);
+      const candidates=awpNumberCandidates(raw);
+      const value=candidates.length?candidates[0].value:null;
+      values[def.key]=value;
+      const candText=candidates.map(x=>x.value.toLocaleString('it-IT',{minimumFractionDigits:2,maximumFractionDigits:2})).join(' · ');
+      addAwpOcrDiagnostic('Data',`Dati AWP · ${def.name}`,row,`${raw.trim()||'(nessun testo)'}\nValore: ${candText||'non riconosciuto'}`);
     }
 
-    let inferred=solveAwpRowCandidates(rows) || solveAwpLooseCandidates(rows);
+    const giocato=values.giocato;
+    const pagato=values.pagato;
+    const corrispettivo=values.corrispettivo;
 
-    // Se il primo passaggio non basta, binarizziamo le STESSE righe già
-    // denoise/downsampled. In questo modo non ri-amplifichiamo il moiré originale.
-    if(!inferred){
-      if(status)status.textContent='Secondo passaggio OCR AWP anti-moiré...';
-      for(let i=0;i<rowDefs.length;i++){
-        const bin=binarizeAwpRow(softCanvases[i]);
-        const result=await worker.recognize(bin);
-        const raw=result?.data?.text||'';
-        rows[i]=mergeAwpCandidates(rows[i],awpNumberCandidates(raw).map(x=>({...x,penalty:x.penalty+0.15})));
-        const list=rows[i].map(x=>x.value.toLocaleString('it-IT',{minimumFractionDigits:2,maximumFractionDigits:2})).join(' · ');
-        addAwpOcrDiagnostic('Data',`Dati AWP · ${rowDefs[i].name} · binario`,bin,`${raw.trim()||'(nessun testo)'}\nCandidati combinati: ${list||'nessuno'}`);
-      }
-      inferred=solveAwpRowCandidates(rows) || solveAwpLooseCandidates(rows);
-    }
+    const valid=
+      Number.isFinite(giocato) && Number.isFinite(pagato) && Number.isFinite(corrispettivo) &&
+      giocato>0 && pagato>=0 && pagato<=giocato &&
+      corrispettivo>=0 && corrispettivo<=(giocato-pagato)+2;
 
-    // Ultimo fallback: conserviamo anche il metodo della v13.49 sul blocco
-    // completo, così la nuova versione non perde nessuna possibilità precedente.
-    if(!inferred){
-      await worker.setParameters({
-        tessedit_pageseg_mode:'6',
-        tessedit_char_whitelist:'0123456789.,+ '
-      });
-      const result=await worker.recognize(numeric);
-      const raw=result?.data?.text||'';
-      addAwpOcrDiagnostic('Data','Dati AWP · fallback blocco v13.49',numeric,raw);
-
-      // Aggiunge al solver globale anche i valori letti dal blocco intero:
-      // in questo modo basta che Tesseract abbia riconosciuto i numeri, anche
-      // se li ha collocati sulla riga sbagliata, per compilare i campi.
-      const blockValues=valuesFromOcrLine(raw);
-      if(blockValues.length){
-        const extra=blockValues.map((value,i)=>({value,penalty:0.25,source:'blocco'}));
-        rows.push(extra);
-        inferred=solveAwpLooseCandidates(rows);
-      }
-      if(!inferred)inferred=inferAwpSummaryByMath(raw);
-    }
-
-    if(!inferred){
-      if(status)status.textContent='Il ritaglio è corretto ma una delle righe finali non è stata letta bene. Apri Diagnostica OCR: vedrai AWP giocato, AWP pagato, Cassa, Corrispettivo esercente e Totale prelevato separati.';
+    if(!valid){
+      if(status)status.textContent='Non sono riuscito a leggere correttamente uno dei tre valori AWP. Apri Diagnostica OCR: ora vengono mostrati solo Giocato, Pagato e Corrispettivo esercente.';
       return;
     }
 
-    setVal('awpRaccolta',inferred.raccolta);
-    setVal('awpVincite',inferred.vincite);
-    setVal('awpCorrispettivo',inferred.corrispettivo);
+    // Scrittura diretta nei tre campi del form.
+    setVal('awpRaccolta',giocato);
+    setVal('awpVincite',pagato);
+    setVal('awpCorrispettivo',corrispettivo);
+
+    // Forza l'aggiornamento anche nei browser mobile che ascoltano input/change.
+    for(const id of ['awpRaccolta','awpVincite','awpCorrispettivo']){
+      const el=$('#'+id);
+      if(el){
+        el.dispatchEvent(new Event('input',{bubbles:true}));
+        el.dispatchEvent(new Event('change',{bubbles:true}));
+      }
+    }
 
     const havePeriod=$('#awpDal').value&&$('#awpAl').value;
-    const mode=inferred.mode?` · ${inferred.mode}`:'';
     if(status)status.textContent=havePeriod
-      ? `Dati AWP letti ✓ Giocato ${eur(inferred.raccolta)} · Pagato ${eur(inferred.vincite)} · Corrispettivo esercente ${eur(inferred.corrispettivo)}${mode}. Controlla e premi Salva.`
-      : `Dati AWP letti ✓ Giocato ${eur(inferred.raccolta)} · Pagato ${eur(inferred.vincite)} · Corrispettivo esercente ${eur(inferred.corrispettivo)}${mode}. Acquisisci anche la foto del periodo.`;
+      ? `Dati AWP letti ✓ Giocato ${eur(giocato)} · Pagato ${eur(pagato)} · Corrispettivo esercente ${eur(corrispettivo)}. Controlla e premi Salva.`
+      : `Dati AWP letti ✓ Giocato ${eur(giocato)} · Pagato ${eur(pagato)} · Corrispettivo esercente ${eur(corrispettivo)}. Acquisisci anche la foto del periodo.`;
   }catch(e){
     console.error(e);
     if(status)status.textContent='Errore lettura dati AWP: '+e.message;

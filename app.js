@@ -1,4 +1,4 @@
-// v13.39 - OCR AWP schermo: lettura intera immagine + fallback mirato
+// v13.40 - diagnostica OCR AWP: mostra immagine analizzata e testo grezzo
 
 // v13.14 - legenda grafico garantita anche su browser/cache precedenti
 (function ensureTrendLegend(){
@@ -969,6 +969,30 @@ async function recognizeAwpCanvas(canvas,{psm='11',whitelist=''},status,label){
     try{if(worker)await worker.terminate()}catch{}
   }
 }
+function clearAwpOcrDiagnostic(kind){
+  const host=$('#awpDiag'+kind);
+  if(host)host.innerHTML='';
+  const box=$('#awpOcrDebug');
+  if(box)box.open=true;
+}
+function addAwpOcrDiagnostic(kind,title,canvas,text){
+  const host=$('#awpDiag'+kind);
+  if(!host)return;
+  const wrap=document.createElement('div');
+  wrap.className='awp-diag-attempt';
+  const h=document.createElement('strong');
+  h.textContent=title;
+  const img=document.createElement('img');
+  try{img.src=canvas.toDataURL('image/jpeg',0.82)}catch{}
+  img.alt=title;
+  const pre=document.createElement('pre');
+  pre.textContent=String(text||'').trim()||'(nessun testo riconosciuto)';
+  wrap.append(h,img,pre);
+  host.appendChild(wrap);
+  const box=$('#awpOcrDebug');
+  if(box)box.open=true;
+}
+
 function extractDatesFromScreenOcr(text){
   const flat=String(text||'').replace(/\n+/g,' ').replace(/\s+/g,' ');
   const dates=[];
@@ -993,20 +1017,24 @@ async function readAwpPeriodPhoto(file){
     if(typeof Tesseract==='undefined')throw new Error('Modulo OCR non disponibile. Ricarica la pagina con connessione Internet.');
     $('#awpPeriodPhotoBtn').disabled=true;
     if(status)status.textContent='Lettura schermata periodo...';
+    clearAwpOcrDiagnostic('Period');
 
     const bmp=await createImageBitmap(file);
     const full=prepareAwpFullImage(bmp,2200);
     let text=await recognizeAwpCanvas(full,{psm:'11'},status,'Lettura periodo');
+    addAwpOcrDiagnostic('Period','Periodo · tentativo 1 · schermata intera',full,text);
     let dates=extractDatesFromScreenOcr(text);
 
     // Fallback: se la lettura dell'intera schermata non basta,
     // analizziamo solo la metà superiore senza dipendere da una posizione precisa.
     if(dates.length<2){
       const top=prepareAwpCrop(bmp,0.02,0.02,0.96,0.58,2600);
-      text+='\n'+await recognizeAwpCanvas(top,{
+      const topText=await recognizeAwpCanvas(top,{
         psm:'6',
         whitelist:'0123456789-/. '
       },status,'Secondo tentativo periodo');
+      addAwpOcrDiagnostic('Period','Periodo · tentativo 2 · parte alta',top,topText);
+      text+='\n'+topText;
       dates=extractDatesFromScreenOcr(text);
     }
     try{bmp.close()}catch{}
@@ -1033,6 +1061,7 @@ async function readAwpDataPhoto(file){
     if(typeof Tesseract==='undefined')throw new Error('Modulo OCR non disponibile. Ricarica la pagina con connessione Internet.');
     $('#awpDataPhotoBtn').disabled=true;
     if(status)status.textContent='Lettura schermata dati AWP...';
+    clearAwpOcrDiagnostic('Data');
 
     const bmp=await createImageBitmap(file);
 
@@ -1041,12 +1070,14 @@ async function readAwpDataPhoto(file){
     // "Vincite totali di periodo" e "Corrispettivo esercente".
     const full=prepareAwpFullImage(bmp,2400);
     const fullText=await recognizeAwpCanvas(full,{psm:'11'},status,'Lettura dati AWP');
+    addAwpOcrDiagnostic('Data','Dati AWP · tentativo 1 · schermata intera',full,fullText);
     let found=extractAwpFromOcr(fullText);
 
     // Se qualche voce manca, secondo passaggio sulla metà inferiore della schermata.
     if(found.raccolta===null||found.vincite===null||found.corrispettivo===null){
       const lower=prepareAwpCrop(bmp,0.03,0.38,0.94,0.48,2800);
       const lowerText=await recognizeAwpCanvas(lower,{psm:'6'},status,'Secondo tentativo dati AWP');
+      addAwpOcrDiagnostic('Data','Dati AWP · tentativo 2 · parte inferiore',lower,lowerText);
       const alt=extractAwpFromOcr(lowerText);
       if(found.raccolta===null)found.raccolta=alt.raccolta;
       if(found.vincite===null)found.vincite=alt.vincite;
@@ -1059,6 +1090,7 @@ async function readAwpDataPhoto(file){
           psm:'6',
           whitelist:'0123456789.,+ '
         },status,'Controllo numerico AWP');
+        addAwpOcrDiagnostic('Data','Dati AWP · tentativo 3 · zona numerica',numeric,numText);
         const inferred=inferAwpSummaryByMath(numText);
         if(inferred){
           if(found.raccolta===null)found.raccolta=inferred.raccolta;

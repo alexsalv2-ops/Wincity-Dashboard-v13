@@ -1,4 +1,4 @@
-// v13.41 - OCR AWP schermo: ritagli stretti validati su foto reali
+// v13.42 - OCR periodo AWP: ritaglio spostato più in basso sulla riga date
 
 // v13.14 - legenda grafico garantita anche su browser/cache precedenti
 (function ensureTrendLegend(){
@@ -1039,9 +1039,9 @@ async function readAwpPeriodPhoto(file){
 
     const bmp=await createImageBitmap(file);
 
-    // Coordinate validate sulla schermata reale: leggiamo quasi soltanto
-    // le due righe "Borderò..." e "dal ... al ...", evitando il resto.
-    const tight=prepareAwpScreenCrop(bmp,0.18,0.28,0.65,0.16,2600);
+    // Dalla diagnostica reale la riga del periodo è più in basso:
+    // qui leggiamo quasi soltanto "dal ... al ...", evitando intestazione e indirizzo.
+    const tight=prepareAwpScreenCrop(bmp,0.16,0.42,0.68,0.13,2600);
     const tightText=await recognizeAwpCanvas(tight,{
       psm:'6',
       whitelist:'0123456789-/. '
@@ -1052,7 +1052,7 @@ async function readAwpPeriodPhoto(file){
 
     // Fallback leggermente più ampio se la foto è inquadrata un po' diversa.
     if(dates.length<2){
-      const wider=prepareAwpScreenCrop(bmp,0.10,0.22,0.80,0.25,2600);
+      const wider=prepareAwpScreenCrop(bmp,0.10,0.36,0.80,0.22,2600);
       const widerText=await recognizeAwpCanvas(wider,{
         psm:'11',
         whitelist:'0123456789-/. '

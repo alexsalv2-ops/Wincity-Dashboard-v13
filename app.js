@@ -1,4 +1,4 @@
-// v13.33 - OCR AWP più robusto: pre-elaborazione + riconoscimento matematico
+// v13.34 - lettura database GitHub con retry per aperture da QR/rete mobile
 
 // v13.14 - legenda grafico garantita anche su browser/cache precedenti
 (function ensureTrendLegend(){
@@ -674,13 +674,51 @@ function decodeGithubContent(content){
   const clean=String(content||'').replace(/\s/g,'');
   return JSON.parse(decodeURIComponent(escape(atob(clean))));
 }
+const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+async function fetchGithubJsonWithRetry(url,options={},attempts=4){
+  let lastError=null;
+  for(let i=0;i<attempts;i++){
+    try{
+      const controller=new AbortController();
+      const timer=setTimeout(()=>controller.abort(),12000);
+      let response;
+      try{
+        response=await fetch(url,{...options,signal:controller.signal});
+      }finally{
+        clearTimeout(timer);
+      }
+
+      if(response.ok) return response;
+
+      const retryable=response.status===408||response.status===429||response.status>=500;
+      if(!retryable) return response;
+      lastError=new Error(`GitHub GET ${response.status}`);
+    }catch(e){
+      lastError=e;
+    }
+
+    if(i<attempts-1){
+      const delays=[700,1400,2600];
+      await wait(delays[i]||2600);
+    }
+  }
+
+  const offline=(typeof navigator!=='undefined' && navigator.onLine===false);
+  if(offline) throw new Error('Connessione Internet assente. Il QR è stato conservato: riconnettiti e riapri la Dashboard.');
+  throw new Error('Connessione al database GitHub non riuscita dopo più tentativi. Il QR è stato conservato: riprova tra qualche secondo.');
+}
 async function fetchLatestGithubDb(){
   const token=getGithubToken();
   if(!token) throw new Error('Token GitHub non disponibile in questa sessione. Apri Impostazioni e premi Salva sul dispositivo.');
   const api=`https://api.github.com/repos/${GH_REPO}/contents/${GH_FILE}`;
   const headers={'Accept':'application/vnd.github+json','Authorization':`Bearer ${token}`,'X-GitHub-Api-Version':'2022-11-28'};
-  const get=await fetch(api,{headers,cache:'no-store'});
-  if(!get.ok) throw new Error(`GitHub GET ${get.status}`);
+  const get=await fetchGithubJsonWithRetry(api,{headers,cache:'no-store'});
+  if(!get.ok){
+    if(get.status===401) throw new Error('Token GitHub non valido o scaduto.');
+    if(get.status===403) throw new Error('GitHub ha rifiutato temporaneamente l’accesso al database. Riprova tra poco.');
+    if(get.status===404) throw new Error('Database privato GitHub non trovato.');
+    throw new Error(`GitHub GET ${get.status}`);
+  }
   const info=await get.json();
   if(!info.content) throw new Error('GitHub non ha restituito il contenuto di data.json');
   const remoteDb=decodeGithubContent(info.content);
@@ -690,7 +728,7 @@ async function fetchLatestGithubDb(){
   remoteDb.awpSettimanale=Array.isArray(remoteDb.awpSettimanale)?remoteDb.awpSettimanale:[];
   remoteDb.records.sort((a,b)=>a.data.localeCompare(b.data));
   remoteDb.utileCumulativo.sort((a,b)=>a.data.localeCompare(b.data));
-  remoteDb.awpSettimanale.sort((a,b)=>a.al.localeCompare(b.al));
+  remoteDb.awpSettimanale.sort((a,b)=>a.dal.localeCompare(b.dal));
   return {remoteDb,sha:info.sha,api,headers};
 }
 async function pushDataToGithubMerged(rec){
@@ -1405,4 +1443,13 @@ $('#nextPeriod').addEventListener('click',()=>shiftPeriod(1));
 $('#refreshBtn').addEventListener('click',()=>location.reload());
 $('#historyMonth').addEventListener('change',renderHistory);
 $$('[data-view]').forEach(b=>b.addEventListener('click',()=>switchView(b.dataset.view)));
-loadData().catch(e=>{console.error(e);$('#toast').textContent=e.message;$('#toast').classList.add('show')});
+loadData().catch(e=>{
+  console.error(e);
+  const t=$('#toast');
+  if(t){
+    const msg=(e&&e.message)?e.message:'Errore di connessione al database.';
+    t.textContent=msg==='Failed to fetch'?'Connessione al database non riuscita. Il QR è stato conservato: riprova tra qualche secondo.':msg;
+    t.classList.add('show');
+    setTimeout(()=>t.classList.remove('show'),8000);
+  }
+});

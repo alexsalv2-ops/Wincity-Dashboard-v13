@@ -1,4 +1,4 @@
-// v13.42 - OCR periodo AWP: ritaglio spostato più in basso sulla riga date
+// v13.43 - OCR dati AWP: ritaglio esteso fino a Corrispettivo e Totale prelevato
 
 // v13.14 - legenda grafico garantita anche su browser/cache precedenti
 (function ensureTrendLegend(){
@@ -1093,7 +1093,7 @@ async function readAwpDataPhoto(file){
     // Sulla seconda schermata leggiamo SOLO la colonna numerica in basso a destra.
     // Nella foto reale questa zona restituisce: ... 527,00 / 4.079,00 /
     // 2.854,00 / 1.225,00 / 83,65 / ...
-    const numeric=prepareAwpScreenCrop(bmp,0.58,0.45,0.23,0.20,2200);
+    const numeric=prepareAwpScreenCrop(bmp,0.58,0.45,0.23,0.32,2200);
     const numText=await recognizeAwpCanvas(numeric,{
       psm:'11',
       whitelist:'0123456789.,+ '
@@ -1104,7 +1104,7 @@ async function readAwpDataPhoto(file){
 
     // Fallback più largo/basso per foto leggermente spostate.
     if(!inferred){
-      const numericWide=prepareAwpScreenCrop(bmp,0.54,0.42,0.29,0.27,2400);
+      const numericWide=prepareAwpScreenCrop(bmp,0.54,0.42,0.29,0.40,2400);
       const wideText=await recognizeAwpCanvas(numericWide,{
         psm:'11',
         whitelist:'0123456789.,+ '

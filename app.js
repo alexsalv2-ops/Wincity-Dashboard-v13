@@ -1,4 +1,4 @@
-// v13.51 - OCR AWP: solver globale dei valori riconosciuti + compilazione automatica
+// v13.52 - OCR AWP: righe totali riallineate sulla foto reale + campi Giocato/Pagato/Corrispettivo
 
 // v13.14 - legenda grafico garantita anche su browser/cache precedenti
 (function ensureTrendLegend(){
@@ -356,9 +356,9 @@ function renderAwpWeeklyDashboard(){
   host.innerHTML=rows.map(x=>`<div class="awp-week-row">
     <div class="awp-week-period">${dmy(x.dal)} → ${dmy(x.al)}</div>
     <div class="kv">
-      <div><span>Raccolta</span><b>${eur(x.raccolta)}</b></div>
-      <div><span>Vincite</span><b>${eur(x.vincite)}</b></div>
-      <div><span>Corrispettivo</span><b class="positive">${eur(x.corrispettivo)}</b></div>
+      <div><span>Giocato</span><b>${eur(x.raccolta)}</b></div>
+      <div><span>Pagato</span><b>${eur(x.vincite)}</b></div>
+      <div><span>Corrispettivo esercente</span><b class="positive">${eur(x.corrispettivo)}</b></div>
     </div>
   </div>`).join('');
 }
@@ -366,7 +366,7 @@ function renderAwpWeeklyHistory(month){
   const rows=[...awpWeeklySeries()].filter(x=>x.dal.startsWith(month)).sort((a,b)=>b.dal.localeCompare(a.dal));
   if(!rows.length)return '';
   return `<section class="panel" style="margin-bottom:18px"><div class="panel-head"><div><h2>🕹 AWP settimanali</h2><p>Borderò settimanali · attribuiti al mese della data iniziale</p></div><span class="pill">${rows.length===1?'1 settimana':rows.length+' settimane'}</span></div>
-    ${rows.map(x=>`<div class="history-summary" style="margin:0 0 10px"><div><span>Periodo</span><strong>${dmy(x.dal)} → ${dmy(x.al)}</strong></div><div><span>Raccolta</span><strong>${eur(x.raccolta)}</strong></div><div><span>Vincite</span><strong>${eur(x.vincite)}</strong></div><div><span>Corrispettivo</span><strong class="positive">${eur(x.corrispettivo)}</strong></div></div>`).join('')}
+    ${rows.map(x=>`<div class="history-summary" style="margin:0 0 10px"><div><span>Periodo</span><strong>${dmy(x.dal)} → ${dmy(x.al)}</strong></div><div><span>Giocato</span><strong>${eur(x.raccolta)}</strong></div><div><span>Pagato</span><strong>${eur(x.vincite)}</strong></div><div><span>Corrispettivo esercente</span><strong class="positive">${eur(x.corrispettivo)}</strong></div></div>`).join('')}
   </section>`;
 }
 
@@ -1427,12 +1427,15 @@ async function readAwpDataPhoto(file){
     const numeric=prepareAwpNativeNumbersCrop(bmp,0.56,0.46,0.31,0.20);
     addAwpOcrDiagnostic('Data','Dati AWP · zona totali v13.49',numeric,'Separazione automatica delle 5 righe…');
 
+    // Coordinate misurate sulla foto reale del borderò.
+    // Nel ritaglio v13.49 i totali NON iniziano in alto: prima ci sono ancora
+    // alcune righe degli apparecchi. I cinque totali iniziano circa al 31%.
     const rowDefs=[
-      {name:'Raccolta',y:0.00,h:0.23},
-      {name:'Vincite',y:0.18,h:0.23},
-      {name:'Cassa',y:0.36,h:0.23},
-      {name:'Corrispettivo',y:0.54,h:0.23},
-      {name:'Totale prelevato',y:0.72,h:0.28}
+      {name:'AWP giocato',y:0.31,h:0.12},
+      {name:'AWP pagato',y:0.41,h:0.12},
+      {name:'Cassa',y:0.50,h:0.12},
+      {name:'Corrispettivo esercente',y:0.60,h:0.12},
+      {name:'Totale prelevato',y:0.69,h:0.15}
     ];
 
     worker=await Tesseract.createWorker('eng',1,{
@@ -1499,7 +1502,7 @@ async function readAwpDataPhoto(file){
     }
 
     if(!inferred){
-      if(status)status.textContent='Il ritaglio è corretto ma nessuna combinazione OCR è risultata contabile. Apri Diagnostica OCR: ora vedrai Raccolta, Vincite, Cassa, Corrispettivo e Prelevato separati.';
+      if(status)status.textContent='Il ritaglio è corretto ma una delle righe finali non è stata letta bene. Apri Diagnostica OCR: vedrai AWP giocato, AWP pagato, Cassa, Corrispettivo esercente e Totale prelevato separati.';
       return;
     }
 
@@ -1510,8 +1513,8 @@ async function readAwpDataPhoto(file){
     const havePeriod=$('#awpDal').value&&$('#awpAl').value;
     const mode=inferred.mode?` · ${inferred.mode}`:'';
     if(status)status.textContent=havePeriod
-      ? `Dati AWP letti ✓ Raccolta ${eur(inferred.raccolta)} · Vincite ${eur(inferred.vincite)} · Corrispettivo ${eur(inferred.corrispettivo)}${mode}. Controlla e premi Salva.`
-      : `Dati AWP letti ✓ Raccolta ${eur(inferred.raccolta)} · Vincite ${eur(inferred.vincite)} · Corrispettivo ${eur(inferred.corrispettivo)}${mode}. Acquisisci anche la foto del periodo.`;
+      ? `Dati AWP letti ✓ Giocato ${eur(inferred.raccolta)} · Pagato ${eur(inferred.vincite)} · Corrispettivo esercente ${eur(inferred.corrispettivo)}${mode}. Controlla e premi Salva.`
+      : `Dati AWP letti ✓ Giocato ${eur(inferred.raccolta)} · Pagato ${eur(inferred.vincite)} · Corrispettivo esercente ${eur(inferred.corrispettivo)}${mode}. Acquisisci anche la foto del periodo.`;
   }catch(e){
     console.error(e);
     if(status)status.textContent='Errore lettura dati AWP: '+e.message;
@@ -1535,7 +1538,7 @@ function awpWeeklyFormItem(){
   if(!/^\d{4}-\d{2}-\d{2}$/.test(dal)||!/^\d{4}-\d{2}-\d{2}$/.test(al)) throw new Error('Inserisci il periodo AWP completo.');
   if(dal>al) throw new Error('La data iniziale AWP non può essere successiva alla data finale.');
   const rawR=$('#awpRaccolta')?.value?.trim()||'',rawV=$('#awpVincite')?.value?.trim()||'',rawC=$('#awpCorrispettivo')?.value?.trim()||'';
-  if(!rawR||!rawV||!rawC) throw new Error('Compila Raccolta, Vincite e Corrispettivo.');
+  if(!rawR||!rawV||!rawC) throw new Error('Compila AWP giocato, AWP pagato e Corrispettivo esercente.');
   return {dal,al,raccolta:num(rawR),vincite:num(rawV),corrispettivo:num(rawC),aggiornato:new Date().toISOString()};
 }
 function fillAwpWeeklyForm(x){

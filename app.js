@@ -1,4 +1,4 @@
-// v13.46 - OCR dati AWP: sposta in alto il blocco dei cinque totali
+// v13.47 - OCR dati AWP: scansione automatica verticale della colonna totali
 
 // v13.14 - legenda grafico garantita anche su browser/cache precedenti
 (function ensureTrendLegend(){
@@ -1008,6 +1008,56 @@ function parseSingleAwpNumber(text){
   return parseOcrItalianAmount(matches[0][0]);
 }
 
+function valuesFromOcrLine(text){
+  const raw=String(text||'').trim();
+  if(!raw)return [];
+  const tokens=[...raw.matchAll(/\d[\d.,]*\d|\d/g)].map(m=>m[0]);
+  const vals=[];
+  for(const token of tokens){
+    const n=parseOcrItalianAmount(token);
+    if(n!==null && Number.isFinite(n))vals.push(n);
+  }
+  return vals;
+}
+function findAwpTotalsSequence(candidates){
+  const vals=candidates.map(x=>x.value);
+  // Cerca 5 valori in ordine, anche con qualche lettura estranea fra loro.
+  for(let a=0;a<vals.length;a++){
+    for(let b=a+1;b<Math.min(vals.length,a+5);b++){
+      for(let cc=b+1;cc<Math.min(vals.length,b+5);cc++){
+        for(let d=cc+1;d<Math.min(vals.length,cc+5);d++){
+          for(let e=d+1;e<Math.min(vals.length,d+5);e++){
+            const raccolta=vals[a],vincite=vals[b],cassa=vals[cc],corrispettivo=vals[d],prelevato=vals[e];
+            if(!(raccolta>0&&vincite>=0&&cassa>=0&&corrispettivo>=0&&prelevato>=0))continue;
+            if(!(raccolta>vincite&&cassa>=corrispettivo))continue;
+            const err1=Math.abs((raccolta-vincite)-cassa);
+            const err2=Math.abs((cassa-corrispettivo)-prelevato);
+            if(err1<=2 && err2<=2){
+              return {raccolta,vincite,cassa,corrispettivo,prelevato,idx:[a,b,cc,d,e]};
+            }
+          }
+        }
+      }
+    }
+  }
+  // Fallback a 4 valori: se manca Totale prelevato ma i primi 4 sono coerenti.
+  for(let a=0;a<vals.length;a++){
+    for(let b=a+1;b<Math.min(vals.length,a+5);b++){
+      for(let cc=b+1;cc<Math.min(vals.length,b+5);cc++){
+        for(let d=cc+1;d<Math.min(vals.length,cc+5);d++){
+          const raccolta=vals[a],vincite=vals[b],cassa=vals[cc],corrispettivo=vals[d];
+          if(!(raccolta>0&&vincite>=0&&cassa>=0&&corrispettivo>=0))continue;
+          if(!(raccolta>vincite&&cassa>=corrispettivo))continue;
+          if(Math.abs((raccolta-vincite)-cassa)<=2){
+            return {raccolta,vincite,cassa,corrispettivo,prelevato:cassa-corrispettivo,idx:[a,b,cc,d]};
+          }
+        }
+      }
+    }
+  }
+  return null;
+}
+
 async function recognizeAwpCanvas(canvas,{psm='11',whitelist=''},status,label){
   let worker=null;
   try{
@@ -1130,19 +1180,10 @@ async function readAwpDataPhoto(file){
 
     const bmp=await createImageBitmap(file);
 
-    // Dalla diagnostica la colonna è corretta: il problema è Tesseract quando
-    // deve leggere più numeri insieme. Isoliamo quindi SOLO i 5 totali finali
-    // e li leggiamo uno per riga.
-    const totals=prepareAwpScreenCrop(bmp,0.64,0.60,0.22,0.145,1900);
-    addAwpOcrDiagnostic('Data','Dati AWP · cinque totali finali',totals,'Lettura riga per riga…');
-
-    const rowDefs=[
-      {name:'Raccolta', y:0.00, h:0.20},
-      {name:'Vincite', y:0.18, h:0.20},
-      {name:'Cassa', y:0.36, h:0.20},
-      {name:'Corrispettivo', y:0.54, h:0.20},
-      {name:'Totale prelevato', y:0.72, h:0.24}
-    ];
+    // Non assumiamo più che i cinque totali siano a una Y precisa.
+    // Scansioniamo verticalmente tutta la colonna destra con strisce sovrapposte.
+    const column=prepareAwpScreenCrop(bmp,0.57,0.43,0.31,0.39,1900);
+    addAwpOcrDiagnostic('Data','Dati AWP · area scandita',column,'Scansione automatica riga per riga…');
 
     worker=await Tesseract.createWorker('eng',1,{
       logger:m=>{
@@ -1155,49 +1196,47 @@ async function readAwpDataPhoto(file){
       tessedit_char_whitelist:'0123456789.,+'
     });
 
-    const values=[];
-    for(const def of rowDefs){
-      const row=cropCanvasRow(totals,def.y,def.h,1500);
-      const result=await worker.recognize(row);
+    const candidates=[];
+    const strips=11;
+    const h=0.105;
+    for(let i=0;i<strips;i++){
+      const y=Math.min(0.895,i*0.082);
+      const strip=cropCanvasRow(column,y,h,1500);
+      const result=await worker.recognize(strip);
       const raw=result?.data?.text||'';
-      const value=parseSingleAwpNumber(raw);
-      values.push(value);
-      addAwpOcrDiagnostic('Data',`Dati AWP · ${def.name}`,row,raw);
+      const vals=valuesFromOcrLine(raw);
+
+      // Conserva i valori nell'ordine verticale, eliminando duplicati dovuti
+      // alla sovrapposizione fra una striscia e la successiva.
+      for(const value of vals){
+        const last=candidates.at(-1);
+        if(last && Math.abs(last.value-value)<0.01 && Math.abs(last.scan-i)<=1)continue;
+        candidates.push({value,scan:i,raw});
+      }
+
+      if(vals.length){
+        addAwpOcrDiagnostic('Data',`Dati AWP · scansione ${i+1}`,strip,raw);
+      }
     }
 
     try{bmp.close()}catch{}
 
-    let [raccolta,vincite,cassa,corrispettivo,prelevato]=values;
+    const inferred=findAwpTotalsSequence(candidates);
 
-    // Se una delle cinque letture è imperfetta, ricostruiamo usando le identità
-    // contabili stampate sul borderò.
-    if(raccolta!==null && cassa!==null && (vincite===null || Math.abs((raccolta-vincite)-cassa)>1)){
-      vincite=raccolta-cassa;
-    }
-    if(cassa!==null && prelevato!==null && (corrispettivo===null || Math.abs((cassa-corrispettivo)-prelevato)>1)){
-      corrispettivo=cassa-prelevato;
-    }
-    if(cassa===null && raccolta!==null && vincite!==null)cassa=raccolta-vincite;
-    if(prelevato===null && cassa!==null && corrispettivo!==null)prelevato=cassa-corrispettivo;
-
-    const valid=
-      raccolta!==null && vincite!==null && corrispettivo!==null &&
-      raccolta>0 && vincite>=0 && corrispettivo>=0 &&
-      (cassa===null || Math.abs((raccolta-vincite)-cassa)<=2);
-
-    if(!valid){
-      if(status)status.textContent='Ho isolato correttamente i totali, ma una o più righe OCR non sono ancora affidabili. Apri Diagnostica OCR: ora vedrai ogni numero separato.';
+    if(!inferred){
+      const list=candidates.map(x=>x.value.toLocaleString('it-IT',{minimumFractionDigits:2,maximumFractionDigits:2})).join(' · ');
+      if(status)status.textContent='Non ho ancora trovato una sequenza contabile valida. Valori OCR letti: '+(list||'nessuno')+'. Apri Diagnostica OCR.';
       return;
     }
 
-    setVal('awpRaccolta',raccolta);
-    setVal('awpVincite',vincite);
-    setVal('awpCorrispettivo',corrispettivo);
+    setVal('awpRaccolta',inferred.raccolta);
+    setVal('awpVincite',inferred.vincite);
+    setVal('awpCorrispettivo',inferred.corrispettivo);
 
     const havePeriod=$('#awpDal').value&&$('#awpAl').value;
     if(status)status.textContent=havePeriod
-      ? `Dati AWP letti ✓ Raccolta ${eur(raccolta)} · Vincite ${eur(vincite)} · Corrispettivo ${eur(corrispettivo)}. Controlla e premi Salva.`
-      : `Dati AWP letti ✓ Raccolta ${eur(raccolta)} · Vincite ${eur(vincite)} · Corrispettivo ${eur(corrispettivo)}. Acquisisci anche la foto del periodo.`;
+      ? `Dati AWP letti ✓ Raccolta ${eur(inferred.raccolta)} · Vincite ${eur(inferred.vincite)} · Corrispettivo ${eur(inferred.corrispettivo)}. Controlla e premi Salva.`
+      : `Dati AWP letti ✓ Raccolta ${eur(inferred.raccolta)} · Vincite ${eur(inferred.vincite)} · Corrispettivo ${eur(inferred.corrispettivo)}. Acquisisci anche la foto del periodo.`;
   }catch(e){
     console.error(e);
     if(status)status.textContent='Errore lettura dati AWP: '+e.message;

@@ -298,11 +298,13 @@
               <button id="loadAwpWeeklyBtn" class="secondary-btn">Carica periodo</button>
             </div>
             <div class="entry-body">
-              <div class="save-row" style="margin:0 0 12px">
-                <button id="awpPhotoBtn" class="secondary-btn">📷 Leggi foto borderò</button>
-                <input id="awpPhotoInput" type="file" accept="image/*" capture="environment" hidden>
+              <div class="save-row awp-photo-row" style="margin:0 0 12px;flex-wrap:wrap">
+                <button id="awpPeriodPhotoBtn" class="secondary-btn">📷 1. Foto periodo</button>
+                <input id="awpPeriodPhotoInput" type="file" accept="image/*" capture="environment" hidden>
+                <button id="awpDataPhotoBtn" class="secondary-btn">📷 2. Foto dati AWP</button>
+                <input id="awpDataPhotoInput" type="file" accept="image/*" capture="environment" hidden>
               </div>
-              <div id="awpOcrStatus" class="master-note" style="margin:0 0 12px">Puoi scattare una foto o scegliere un'immagine già salvata. I valori vengono solo compilati: controllali prima di salvare.</div>
+              <div id="awpOcrStatus" class="master-note" style="margin:0 0 12px">Prima fotografa la schermata con il periodo, poi la schermata con il riepilogo AWP. I valori vengono compilati ma non salvati automaticamente.</div>
               <div class="two-fields">
                 <label>Dal<input id="awpDal" type="date"></label>
                 <label>Al<input id="awpAl" type="date"></label>
@@ -404,6 +406,6 @@
   </nav>
 
   <div id="toast" class="toast"></div>
-  <script src="app.js?v=1337"></script>
+  <script src="app.js?v=1338"></script>
 </body>
 </html>

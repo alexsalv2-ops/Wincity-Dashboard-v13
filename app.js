@@ -1,4 +1,4 @@
-// v13.49 - OCR AWP: niente upscale sul monitor + parser importi più tollerante
+// v13.50 - OCR AWP: lettura riga per riga + doppio preprocessing + solver contabile
 
 // v13.14 - legenda grafico garantita anche su browser/cache precedenti
 (function ensureTrendLegend(){
@@ -1029,6 +1029,129 @@ function parseSingleAwpNumber(text){
   return parseOcrItalianAmount(matches[0][0]);
 }
 
+
+function binarizeAwpRow(source){
+  const targetWidth=Math.max(900,Math.min(1500,source.width*2.4));
+  const scale=targetWidth/Math.max(1,source.width);
+  const canvas=document.createElement('canvas');
+  canvas.width=Math.round(source.width*scale);
+  canvas.height=Math.max(1,Math.round(source.height*scale));
+  const ctx=canvas.getContext('2d',{willReadFrequently:true});
+  ctx.imageSmoothingEnabled=true;
+  ctx.imageSmoothingQuality='high';
+  ctx.drawImage(source,0,0,canvas.width,canvas.height);
+
+  const img=ctx.getImageData(0,0,canvas.width,canvas.height);
+  const data=img.data,hist=new Uint32Array(256);
+  let borderSum=0,borderCount=0;
+  for(let y=0;y<canvas.height;y++){
+    for(let x=0;x<canvas.width;x++){
+      const i=(y*canvas.width+x)*4;
+      const g=Math.round(data[i]*0.299+data[i+1]*0.587+data[i+2]*0.114);
+      hist[g]++;
+      if(x<3||x>=canvas.width-3||y<3||y>=canvas.height-3){borderSum+=g;borderCount++}
+    }
+  }
+  const total=canvas.width*canvas.height;
+  let sum=0;for(let i=0;i<256;i++)sum+=i*hist[i];
+  let sumB=0,wB=0,maxVar=-1,threshold=128;
+  for(let t=0;t<256;t++){
+    wB+=hist[t];if(!wB)continue;
+    const wF=total-wB;if(!wF)break;
+    sumB+=t*hist[t];
+    const mB=sumB/wB,mF=(sum-sumB)/wF;
+    const between=wB*wF*(mB-mF)*(mB-mF);
+    if(between>maxVar){maxVar=between;threshold=t}
+  }
+  const darkBackground=(borderSum/Math.max(1,borderCount))<128;
+  for(let i=0;i<data.length;i+=4){
+    const g=Math.round(data[i]*0.299+data[i+1]*0.587+data[i+2]*0.114);
+    const isText=darkBackground ? g>threshold : g<threshold;
+    const v=isText?0:255;
+    data[i]=data[i+1]=data[i+2]=v;data[i+3]=255;
+  }
+  ctx.putImageData(img,0,0);
+  return canvas;
+}
+function awpNumberCandidates(text){
+  const raw=String(text||'').replace(/\s/g,'');
+  const tokens=[...raw.matchAll(/\d[\d.,]*\d|\d/g)].map(m=>m[0]);
+  const out=[];
+  const add=(value,penalty,source)=>{
+    if(!Number.isFinite(value)||value<0||value>10000000)return;
+    const found=out.find(x=>Math.abs(x.value-value)<0.005);
+    if(found){if(penalty<found.penalty){found.penalty=penalty;found.source=source}return}
+    out.push({value,penalty,source});
+  };
+  for(const token of tokens){
+    const parsed=parseOcrItalianAmount(token);
+    if(parsed!==null)add(parsed,0,token);
+    const digits=token.replace(/\D/g,'');
+    if(digits.length>=3&&digits.length<=8){
+      add(Number(digits.slice(0,-2)+'.'+digits.slice(-2)),0.2,token+'→centesimi');
+    }
+    // Caso reale osservato: 2.854,00 può diventare 2.854.002.
+    // Se compare una cifra OCR in più, generiamo le possibili correzioni e
+    // lasciamo che siano le identità contabili a scegliere quella coerente.
+    if(digits.length>=7&&digits.length<=9){
+      for(let i=0;i<digits.length;i++){
+        const d=digits.slice(0,i)+digits.slice(i+1);
+        if(d.length<3)continue;
+        add(Number(d.slice(0,-2)+'.'+d.slice(-2)),1.0+(i/digits.length)*0.1,token+'→-1 cifra');
+      }
+    }
+  }
+  return out.sort((a,b)=>a.penalty-b.penalty).slice(0,10);
+}
+function mergeAwpCandidates(base,extra){
+  const out=[...(base||[])];
+  for(const x of extra||[]){
+    const found=out.find(y=>Math.abs(y.value-x.value)<0.005);
+    if(found){if(x.penalty<found.penalty)Object.assign(found,x)}
+    else out.push(x);
+  }
+  return out.sort((a,b)=>a.penalty-b.penalty).slice(0,10);
+}
+function solveAwpRowCandidates(rows){
+  if(!Array.isArray(rows)||rows.length<5)return null;
+  if(rows.every(r=>r&&r.length)){
+    let best=null;
+    for(const r of rows[0])for(const v of rows[1])for(const c of rows[2])for(const k of rows[3])for(const p of rows[4]){
+      if(!(r.value>0&&v.value>=0&&c.value>=0&&k.value>=0&&p.value>=0))continue;
+      if(!(r.value>v.value&&c.value>=k.value&&c.value>=p.value))continue;
+      const e1=Math.abs((r.value-v.value)-c.value);
+      const e2=Math.abs((c.value-k.value)-p.value);
+      if(e1>2||e2>2)continue;
+      const score=(e1+e2)*50+r.penalty+v.penalty+c.penalty+k.penalty+p.penalty;
+      if(!best||score<best.score)best={
+        raccolta:r.value,vincite:v.value,cassa:c.value,corrispettivo:k.value,prelevato:p.value,
+        score,mode:'5 righe validate'
+      };
+    }
+    if(best)return best;
+  }
+
+  // Fallback robusto: Raccolta, Cassa e Totale prelevato sono sufficienti
+  // a ricostruire Vincite e Corrispettivo con le identità stampate a video.
+  if(rows[0]?.length&&rows[2]?.length&&rows[4]?.length){
+    let best=null;
+    for(const r of rows[0])for(const c of rows[2])for(const p of rows[4]){
+      if(!(r.value>c.value&&c.value>=p.value))continue;
+      const vincite=r.value-c.value,corrispettivo=c.value-p.value;
+      if(vincite<0||corrispettivo<0)continue;
+      const nearV=rows[1]?.length?Math.min(...rows[1].map(x=>Math.abs(x.value-vincite))):0;
+      const nearK=rows[3]?.length?Math.min(...rows[3].map(x=>Math.abs(x.value-corrispettivo))):0;
+      const score=r.penalty+c.penalty+p.penalty+Math.min(nearV,20)*0.05+Math.min(nearK,20)*0.05+3;
+      if(!best||score<best.score)best={
+        raccolta:r.value,vincite,cassa:c.value,corrispettivo,prelevato:p.value,
+        score,mode:'ricostruzione da Raccolta/Cassa/Prelevato'
+      };
+    }
+    if(best)return best;
+  }
+  return null;
+}
+
 function valuesFromOcrLine(text){
   const raw=String(text||'').trim();
   if(!raw)return [];
@@ -1192,40 +1315,84 @@ async function readAwpPeriodPhoto(file){
 async function readAwpDataPhoto(file){
   if(!file)return;
   const status=$('#awpOcrStatus');
+  let worker=null,bmp=null;
   try{
     if(typeof Tesseract==='undefined')throw new Error('Modulo OCR non disponibile. Ricarica la pagina con connessione Internet.');
     $('#awpDataPhotoBtn').disabled=true;
     if(status)status.textContent='Lettura schermata dati AWP...';
     clearAwpOcrDiagnostic('Data');
 
-    const bmp=await createImageBitmap(file);
+    bmp=await createImageBitmap(file);
 
-    // Prima scelta: solo la zona dei totali, mantenuta quasi alla risoluzione
-    // originale. L'upscale usato prima amplificava il moiré del monitor.
+    // v13.50: manteniamo ESATTAMENTE la zona corretta trovata nella v13.49.
+    // La differenza è che non chiediamo più a Tesseract di leggere i 5 importi
+    // come un unico blocco: li separiamo e li leggiamo uno alla volta.
     const numeric=prepareAwpNativeNumbersCrop(bmp,0.56,0.46,0.31,0.20);
-    const numText=await recognizeAwpCanvas(numeric,{
-      psm:'6',
-      whitelist:'0123456789.,+ '
-    },status,'Lettura totali AWP');
-    addAwpOcrDiagnostic('Data','Dati AWP · totali senza ingrandimento',numeric,numText);
+    addAwpOcrDiagnostic('Data','Dati AWP · zona totali v13.49',numeric,'Separazione automatica delle 5 righe…');
 
-    let inferred=inferAwpSummaryByMath(numText);
+    const rowDefs=[
+      {name:'Raccolta',y:0.00,h:0.23},
+      {name:'Vincite',y:0.18,h:0.23},
+      {name:'Cassa',y:0.36,h:0.23},
+      {name:'Corrispettivo',y:0.54,h:0.23},
+      {name:'Totale prelevato',y:0.72,h:0.28}
+    ];
 
-    // Secondo tentativo leggermente più ampio, sempre senza upscale.
-    if(!inferred){
-      const numericWide=prepareAwpNativeNumbersCrop(bmp,0.53,0.42,0.36,0.28);
-      const wideText=await recognizeAwpCanvas(numericWide,{
-        psm:'6',
-        whitelist:'0123456789.,+ '
-      },status,'Secondo tentativo totali AWP');
-      addAwpOcrDiagnostic('Data','Dati AWP · totali area ampia senza ingrandimento',numericWide,wideText);
-      inferred=inferAwpSummaryByMath(numText+'\n'+wideText);
+    worker=await Tesseract.createWorker('eng',1,{
+      logger:m=>{
+        if(!status)return;
+        if(m.status==='recognizing text')status.textContent=`Lettura valori AWP... ${Math.round((m.progress||0)*100)}%`;
+      }
+    });
+    await worker.setParameters({
+      tessedit_pageseg_mode:'7',
+      tessedit_char_whitelist:'0123456789.,+'
+    });
+
+    const rows=[],softCanvases=[];
+    for(let i=0;i<rowDefs.length;i++){
+      const def=rowDefs[i];
+      const row=cropCanvasRow(numeric,def.y,def.h,1350);
+      softCanvases.push(row);
+      const result=await worker.recognize(row);
+      const raw=result?.data?.text||'';
+      rows[i]=awpNumberCandidates(raw);
+      const list=rows[i].map(x=>x.value.toLocaleString('it-IT',{minimumFractionDigits:2,maximumFractionDigits:2})).join(' · ');
+      addAwpOcrDiagnostic('Data',`Dati AWP · ${def.name}`,row,`${raw.trim()||'(nessun testo)'}\nCandidati: ${list||'nessuno'}`);
     }
 
-    try{bmp.close()}catch{}
+    let inferred=solveAwpRowCandidates(rows);
+
+    // Se il primo passaggio non basta, binarizziamo le STESSE righe già
+    // denoise/downsampled. In questo modo non ri-amplifichiamo il moiré originale.
+    if(!inferred){
+      if(status)status.textContent='Secondo passaggio OCR AWP anti-moiré...';
+      for(let i=0;i<rowDefs.length;i++){
+        const bin=binarizeAwpRow(softCanvases[i]);
+        const result=await worker.recognize(bin);
+        const raw=result?.data?.text||'';
+        rows[i]=mergeAwpCandidates(rows[i],awpNumberCandidates(raw).map(x=>({...x,penalty:x.penalty+0.15})));
+        const list=rows[i].map(x=>x.value.toLocaleString('it-IT',{minimumFractionDigits:2,maximumFractionDigits:2})).join(' · ');
+        addAwpOcrDiagnostic('Data',`Dati AWP · ${rowDefs[i].name} · binario`,bin,`${raw.trim()||'(nessun testo)'}\nCandidati combinati: ${list||'nessuno'}`);
+      }
+      inferred=solveAwpRowCandidates(rows);
+    }
+
+    // Ultimo fallback: conserviamo anche il metodo della v13.49 sul blocco
+    // completo, così la nuova versione non perde nessuna possibilità precedente.
+    if(!inferred){
+      await worker.setParameters({
+        tessedit_pageseg_mode:'6',
+        tessedit_char_whitelist:'0123456789.,+ '
+      });
+      const result=await worker.recognize(numeric);
+      const raw=result?.data?.text||'';
+      addAwpOcrDiagnostic('Data','Dati AWP · fallback blocco v13.49',numeric,raw);
+      inferred=inferAwpSummaryByMath(raw);
+    }
 
     if(!inferred){
-      if(status)status.textContent='La zona è corretta ma l’OCR non ha ancora prodotto una sequenza valida. Apri Diagnostica OCR e mandami il testo dei totali senza ingrandimento.';
+      if(status)status.textContent='Il ritaglio è corretto ma nessuna combinazione OCR è risultata contabile. Apri Diagnostica OCR: ora vedrai Raccolta, Vincite, Cassa, Corrispettivo e Prelevato separati.';
       return;
     }
 
@@ -1234,13 +1401,16 @@ async function readAwpDataPhoto(file){
     setVal('awpCorrispettivo',inferred.corrispettivo);
 
     const havePeriod=$('#awpDal').value&&$('#awpAl').value;
+    const mode=inferred.mode?` · ${inferred.mode}`:'';
     if(status)status.textContent=havePeriod
-      ? `Dati AWP letti ✓ Raccolta ${eur(inferred.raccolta)} · Vincite ${eur(inferred.vincite)} · Corrispettivo ${eur(inferred.corrispettivo)}. Controlla e premi Salva.`
-      : `Dati AWP letti ✓ Raccolta ${eur(inferred.raccolta)} · Vincite ${eur(inferred.vincite)} · Corrispettivo ${eur(inferred.corrispettivo)}. Acquisisci anche la foto del periodo.`;
+      ? `Dati AWP letti ✓ Raccolta ${eur(inferred.raccolta)} · Vincite ${eur(inferred.vincite)} · Corrispettivo ${eur(inferred.corrispettivo)}${mode}. Controlla e premi Salva.`
+      : `Dati AWP letti ✓ Raccolta ${eur(inferred.raccolta)} · Vincite ${eur(inferred.vincite)} · Corrispettivo ${eur(inferred.corrispettivo)}${mode}. Acquisisci anche la foto del periodo.`;
   }catch(e){
     console.error(e);
     if(status)status.textContent='Errore lettura dati AWP: '+e.message;
   }finally{
+    try{if(worker)await worker.terminate()}catch{}
+    try{if(bmp)bmp.close()}catch{}
     $('#awpDataPhotoBtn').disabled=false;
     const input=$('#awpDataPhotoInput');if(input)input.value='';
   }

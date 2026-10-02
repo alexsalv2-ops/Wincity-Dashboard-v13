@@ -1,4 +1,4 @@
-// v13.40 - diagnostica OCR AWP: mostra immagine analizzata e testo grezzo
+// v13.41 - OCR AWP schermo: ritagli stretti validati su foto reali
 
 // v13.14 - legenda grafico garantita anche su browser/cache precedenti
 (function ensureTrendLegend(){
@@ -951,6 +951,24 @@ function prepareAwpFullImage(bmp,targetWidth=2200,filter='grayscale(1) contrast(
   ctx.filter='none';
   return canvas;
 }
+function prepareAwpScreenCrop(bmp,xPct,yPct,wPct,hPct,targetWidth=2200){
+  const sx=Math.max(0,Math.round(bmp.width*xPct));
+  const sy=Math.max(0,Math.round(bmp.height*yPct));
+  const sw=Math.min(bmp.width-sx,Math.round(bmp.width*wPct));
+  const sh=Math.min(bmp.height-sy,Math.round(bmp.height*hPct));
+  const scale=Math.min(4,Math.max(1.5,targetWidth/Math.max(1,sw)));
+  const canvas=document.createElement('canvas');
+  canvas.width=Math.round(sw*scale);
+  canvas.height=Math.round(sh*scale);
+  const ctx=canvas.getContext('2d',{willReadFrequently:true});
+  // Sul monitor il filtro aggressivo amplifica il moiré: meglio una
+  // elaborazione molto leggera e un ritaglio stretto.
+  ctx.filter='grayscale(1) contrast(1.18) brightness(1.03)';
+  ctx.drawImage(bmp,sx,sy,sw,sh,0,0,canvas.width,canvas.height);
+  ctx.filter='none';
+  return canvas;
+}
+
 async function recognizeAwpCanvas(canvas,{psm='11',whitelist=''},status,label){
   let worker=null;
   try{
@@ -1020,23 +1038,29 @@ async function readAwpPeriodPhoto(file){
     clearAwpOcrDiagnostic('Period');
 
     const bmp=await createImageBitmap(file);
-    const full=prepareAwpFullImage(bmp,2200);
-    let text=await recognizeAwpCanvas(full,{psm:'11'},status,'Lettura periodo');
-    addAwpOcrDiagnostic('Period','Periodo · tentativo 1 · schermata intera',full,text);
-    let dates=extractDatesFromScreenOcr(text);
 
-    // Fallback: se la lettura dell'intera schermata non basta,
-    // analizziamo solo la metà superiore senza dipendere da una posizione precisa.
+    // Coordinate validate sulla schermata reale: leggiamo quasi soltanto
+    // le due righe "Borderò..." e "dal ... al ...", evitando il resto.
+    const tight=prepareAwpScreenCrop(bmp,0.18,0.28,0.65,0.16,2600);
+    const tightText=await recognizeAwpCanvas(tight,{
+      psm:'6',
+      whitelist:'0123456789-/. '
+    },status,'Lettura periodo');
+    addAwpOcrDiagnostic('Period','Periodo · zona stretta',tight,tightText);
+
+    let dates=extractDatesFromScreenOcr(tightText);
+
+    // Fallback leggermente più ampio se la foto è inquadrata un po' diversa.
     if(dates.length<2){
-      const top=prepareAwpCrop(bmp,0.02,0.02,0.96,0.58,2600);
-      const topText=await recognizeAwpCanvas(top,{
-        psm:'6',
+      const wider=prepareAwpScreenCrop(bmp,0.10,0.22,0.80,0.25,2600);
+      const widerText=await recognizeAwpCanvas(wider,{
+        psm:'11',
         whitelist:'0123456789-/. '
       },status,'Secondo tentativo periodo');
-      addAwpOcrDiagnostic('Period','Periodo · tentativo 2 · parte alta',top,topText);
-      text+='\n'+topText;
-      dates=extractDatesFromScreenOcr(text);
+      addAwpOcrDiagnostic('Period','Periodo · zona ampia',wider,widerText);
+      dates=extractDatesFromScreenOcr(tightText+'\n'+widerText);
     }
+
     try{bmp.close()}catch{}
 
     if(dates.length>=2){
@@ -1044,7 +1068,7 @@ async function readAwpPeriodPhoto(file){
       $('#awpAl').value=dates[1];
       if(status)status.textContent=`Periodo letto ✓ ${dmy(dates[0])} → ${dmy(dates[1])}. Ora acquisisci la foto dei dati AWP.`;
     }else{
-      if(status)status.textContent='Non ho riconosciuto il periodo. Prova a tenere la riga “dal ... al ...” grande e nitida nella foto.';
+      if(status)status.textContent='Non ho riconosciuto il periodo. Apri Diagnostica OCR: ora deve mostrare soltanto la zona della data.';
     }
   }catch(e){
     console.error(e);
@@ -1054,6 +1078,7 @@ async function readAwpPeriodPhoto(file){
     const input=$('#awpPeriodPhotoInput');if(input)input.value='';
   }
 }
+
 async function readAwpDataPhoto(file){
   if(!file)return;
   const status=$('#awpOcrStatus');
@@ -1065,56 +1090,44 @@ async function readAwpDataPhoto(file){
 
     const bmp=await createImageBitmap(file);
 
-    // Primo passaggio: intera schermata con parole + numeri.
-    // Qui sfruttiamo proprio le etichette "Raccolta totale di periodo",
-    // "Vincite totali di periodo" e "Corrispettivo esercente".
-    const full=prepareAwpFullImage(bmp,2400);
-    const fullText=await recognizeAwpCanvas(full,{psm:'11'},status,'Lettura dati AWP');
-    addAwpOcrDiagnostic('Data','Dati AWP · tentativo 1 · schermata intera',full,fullText);
-    let found=extractAwpFromOcr(fullText);
+    // Sulla seconda schermata leggiamo SOLO la colonna numerica in basso a destra.
+    // Nella foto reale questa zona restituisce: ... 527,00 / 4.079,00 /
+    // 2.854,00 / 1.225,00 / 83,65 / ...
+    const numeric=prepareAwpScreenCrop(bmp,0.58,0.45,0.23,0.20,2200);
+    const numText=await recognizeAwpCanvas(numeric,{
+      psm:'11',
+      whitelist:'0123456789.,+ '
+    },status,'Lettura valori AWP');
+    addAwpOcrDiagnostic('Data','Dati AWP · colonna totali',numeric,numText);
 
-    // Se qualche voce manca, secondo passaggio sulla metà inferiore della schermata.
-    if(found.raccolta===null||found.vincite===null||found.corrispettivo===null){
-      const lower=prepareAwpCrop(bmp,0.03,0.38,0.94,0.48,2800);
-      const lowerText=await recognizeAwpCanvas(lower,{psm:'6'},status,'Secondo tentativo dati AWP');
-      addAwpOcrDiagnostic('Data','Dati AWP · tentativo 2 · parte inferiore',lower,lowerText);
-      const alt=extractAwpFromOcr(lowerText);
-      if(found.raccolta===null)found.raccolta=alt.raccolta;
-      if(found.vincite===null)found.vincite=alt.vincite;
-      if(found.corrispettivo===null)found.corrispettivo=alt.corrispettivo;
+    let inferred=inferAwpSummaryByMath(numText);
 
-      // Ultimo fallback numerico sulla colonna destra dei totali.
-      if(found.raccolta===null||found.vincite===null||found.corrispettivo===null){
-        const numeric=prepareAwpCrop(bmp,0.50,0.50,0.42,0.24,2400);
-        const numText=await recognizeAwpCanvas(numeric,{
-          psm:'6',
-          whitelist:'0123456789.,+ '
-        },status,'Controllo numerico AWP');
-        addAwpOcrDiagnostic('Data','Dati AWP · tentativo 3 · zona numerica',numeric,numText);
-        const inferred=inferAwpSummaryByMath(numText);
-        if(inferred){
-          if(found.raccolta===null)found.raccolta=inferred.raccolta;
-          if(found.vincite===null)found.vincite=inferred.vincite;
-          if(found.corrispettivo===null)found.corrispettivo=inferred.corrispettivo;
-        }
-      }
+    // Fallback più largo/basso per foto leggermente spostate.
+    if(!inferred){
+      const numericWide=prepareAwpScreenCrop(bmp,0.54,0.42,0.29,0.27,2400);
+      const wideText=await recognizeAwpCanvas(numericWide,{
+        psm:'11',
+        whitelist:'0123456789.,+ '
+      },status,'Secondo tentativo valori AWP');
+      addAwpOcrDiagnostic('Data','Dati AWP · colonna totali ampia',numericWide,wideText);
+      inferred=inferAwpSummaryByMath(numText+'\n'+wideText);
     }
+
     try{bmp.close()}catch{}
 
-    const missing=[];
-    if(found.raccolta!==null)setVal('awpRaccolta',found.raccolta);else missing.push('raccolta');
-    if(found.vincite!==null)setVal('awpVincite',found.vincite);else missing.push('vincite');
-    if(found.corrispettivo!==null)setVal('awpCorrispettivo',found.corrispettivo);else missing.push('corrispettivo');
-
-    if(missing.length){
-      if(status)status.textContent='Ho letto la schermata ma mancano: '+missing.join(', ')+'. Prova a fotografare soprattutto la parte bassa con le righe di riepilogo.';
+    if(!inferred){
+      if(status)status.textContent='Non ho riconosciuto i tre valori AWP. Apri Diagnostica OCR e mandami la zona numerica mostrata.';
       return;
     }
 
+    setVal('awpRaccolta',inferred.raccolta);
+    setVal('awpVincite',inferred.vincite);
+    setVal('awpCorrispettivo',inferred.corrispettivo);
+
     const havePeriod=$('#awpDal').value&&$('#awpAl').value;
     if(status)status.textContent=havePeriod
-      ? `Dati AWP letti ✓ Raccolta ${eur(found.raccolta)} · Vincite ${eur(found.vincite)} · Corrispettivo ${eur(found.corrispettivo)}. Controlla e premi Salva.`
-      : `Dati AWP letti ✓ Raccolta ${eur(found.raccolta)} · Vincite ${eur(found.vincite)} · Corrispettivo ${eur(found.corrispettivo)}. Acquisisci anche la foto del periodo.`;
+      ? `Dati AWP letti ✓ Raccolta ${eur(inferred.raccolta)} · Vincite ${eur(inferred.vincite)} · Corrispettivo ${eur(inferred.corrispettivo)}. Controlla e premi Salva.`
+      : `Dati AWP letti ✓ Raccolta ${eur(inferred.raccolta)} · Vincite ${eur(inferred.vincite)} · Corrispettivo ${eur(inferred.corrispettivo)}. Acquisisci anche la foto del periodo.`;
   }catch(e){
     console.error(e);
     if(status)status.textContent='Errore lettura dati AWP: '+e.message;

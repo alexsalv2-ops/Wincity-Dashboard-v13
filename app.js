@@ -1,4 +1,4 @@
-// v13.48 - OCR dati AWP: lettura schermata intera con etichette + fallback numerico
+// v13.49 - OCR AWP: niente upscale sul monitor + parser importi più tollerante
 
 // v13.14 - legenda grafico garantita anche su browser/cache precedenti
 (function ensureTrendLegend(){
@@ -784,21 +784,20 @@ function parseOcrItalianAmount(raw){
   if(!s)return null;
   s=s.replace(/[^0-9,.-]/g,'');
 
-  // Formato normale: 4.079,00 / 83,65 / 4.079.00
-  let m=s.match(/-?\d[\d.,]*[,.]\d{2}$/);
+  // Tesseract sul monitor spesso restituisce 2.854,0 oppure 1.141,3:
+  // accettiamo quindi 1 o 2 cifre decimali.
+  let m=s.match(/-?\d[\d.,]*[,.](\d{1,2})$/);
   if(m){
     s=m[0];
     const lastComma=s.lastIndexOf(','),lastDot=s.lastIndexOf('.');
     const decPos=Math.max(lastComma,lastDot);
     const intPart=s.slice(0,decPos).replace(/[.,]/g,'');
-    const decPart=s.slice(decPos+1);
-    if(decPart.length===2){
-      const n=Number(intPart+'.'+decPart);
-      if(Number.isFinite(n))return n;
-    }
+    const decPart=s.slice(decPos+1).padEnd(2,'0');
+    const n=Number(intPart+'.'+decPart);
+    if(Number.isFinite(n))return n;
   }
 
-  // OCR frequente sul borderò: 2.85400 / 1.22500 (manca il separatore dei centesimi).
+  // OCR possibile: 2.85400 / 1.22500, con il separatore dei centesimi perso.
   m=s.match(/^(\d{1,3})[.,](\d{5})$/);
   if(m){
     const digits=m[1]+m[2];
@@ -806,9 +805,9 @@ function parseOcrItalianAmount(raw){
     if(Number.isFinite(n))return n;
   }
 
-  // Ultimo ripiego: sole cifre, ultime due considerate centesimi.
+  // Evita di inventare decimali da una singola cifra isolata.
   const digits=s.replace(/\D/g,'');
-  if(digits.length>=3 && digits.length<=8){
+  if(digits.length>=4 && digits.length<=8){
     const n=Number(digits.slice(0,-2)+'.'+digits.slice(-2));
     if(Number.isFinite(n))return n;
   }
@@ -940,6 +939,28 @@ function extractAwpFromOcr(text){
 
   return {dal,al,raccolta,vincite,corrispettivo};
 }
+function prepareAwpNativeNumbersCrop(bmp,xPct,yPct,wPct,hPct){
+  const sx=Math.max(0,Math.round(bmp.width*xPct));
+  const sy=Math.max(0,Math.round(bmp.height*yPct));
+  const sw=Math.min(bmp.width-sx,Math.round(bmp.width*wPct));
+  const sh=Math.min(bmp.height-sy,Math.round(bmp.height*hPct));
+
+  // Il problema principale è il moiré: NON ingrandiamo. Se la zona è grande,
+  // la riduciamo leggermente per mediare le righe del monitor.
+  const outW=Math.max(220,Math.min(sw,520));
+  const scale=outW/Math.max(1,sw);
+  const canvas=document.createElement('canvas');
+  canvas.width=Math.round(sw*scale);
+  canvas.height=Math.round(sh*scale);
+  const ctx=canvas.getContext('2d',{willReadFrequently:true});
+  ctx.imageSmoothingEnabled=true;
+  ctx.imageSmoothingQuality='high';
+  ctx.filter='grayscale(1) blur(0.35px) contrast(1.28) brightness(1.04)';
+  ctx.drawImage(bmp,sx,sy,sw,sh,0,0,canvas.width,canvas.height);
+  ctx.filter='none';
+  return canvas;
+}
+
 function prepareAwpFullImage(bmp,targetWidth=2200,filter='grayscale(1) contrast(1.35) brightness(1.04)'){
   const scale=Math.min(3,Math.max(1,targetWidth/Math.max(1,bmp.width)));
   const canvas=document.createElement('canvas');
@@ -1179,59 +1200,43 @@ async function readAwpDataPhoto(file){
 
     const bmp=await createImageBitmap(file);
 
-    // Sulle foto reali del terminale la lettura più affidabile è la schermata intera:
-    // Tesseract riesce a leggere direttamente le righe "Raccolta totale di periodo",
-    // "Vincite totali di periodo" e "Corrispettivo esercente".
-    const full=document.createElement('canvas');
-    const scale=Math.min(1.8,Math.max(1,1800/Math.max(1,bmp.width)));
-    full.width=Math.round(bmp.width*scale);
-    full.height=Math.round(bmp.height*scale);
-    const ctx=full.getContext('2d',{willReadFrequently:true});
-    ctx.drawImage(bmp,0,0,full.width,full.height);
-
-    const fullText=await recognizeAwpCanvas(full,{
+    // Prima scelta: solo la zona dei totali, mantenuta quasi alla risoluzione
+    // originale. L'upscale usato prima amplificava il moiré del monitor.
+    const numeric=prepareAwpNativeNumbersCrop(bmp,0.56,0.46,0.31,0.20);
+    const numText=await recognizeAwpCanvas(numeric,{
       psm:'6',
-      whitelist:''
-    },status,'Lettura schermata AWP');
+      whitelist:'0123456789.,+ '
+    },status,'Lettura totali AWP');
+    addAwpOcrDiagnostic('Data','Dati AWP · totali senza ingrandimento',numeric,numText);
 
-    addAwpOcrDiagnostic('Data','Dati AWP · schermata intera',full,fullText);
+    let inferred=inferAwpSummaryByMath(numText);
 
-    let found=extractAwpFromOcr(fullText);
-
-    // Fallback: se una voce non viene letta tramite etichetta, cerchiamo
-    // la sequenza numerica coerente nella colonna destra.
-    if(found.raccolta===null||found.vincite===null||found.corrispettivo===null){
-      const numeric=prepareAwpScreenCrop(bmp,0.57,0.43,0.31,0.39,1900);
-      const numText=await recognizeAwpCanvas(numeric,{
+    // Secondo tentativo leggermente più ampio, sempre senza upscale.
+    if(!inferred){
+      const numericWide=prepareAwpNativeNumbersCrop(bmp,0.53,0.42,0.36,0.28);
+      const wideText=await recognizeAwpCanvas(numericWide,{
         psm:'6',
         whitelist:'0123456789.,+ '
-      },status,'Fallback numerico AWP');
-      addAwpOcrDiagnostic('Data','Dati AWP · fallback colonna numerica',numeric,numText);
-
-      const inferred=inferAwpSummaryByMath(numText);
-      if(inferred){
-        if(found.raccolta===null)found.raccolta=inferred.raccolta;
-        if(found.vincite===null)found.vincite=inferred.vincite;
-        if(found.corrispettivo===null)found.corrispettivo=inferred.corrispettivo;
-      }
+      },status,'Secondo tentativo totali AWP');
+      addAwpOcrDiagnostic('Data','Dati AWP · totali area ampia senza ingrandimento',numericWide,wideText);
+      inferred=inferAwpSummaryByMath(numText+'\n'+wideText);
     }
 
     try{bmp.close()}catch{}
 
-    const missing=[];
-    if(found.raccolta!==null)setVal('awpRaccolta',found.raccolta);else missing.push('raccolta');
-    if(found.vincite!==null)setVal('awpVincite',found.vincite);else missing.push('vincite');
-    if(found.corrispettivo!==null)setVal('awpCorrispettivo',found.corrispettivo);else missing.push('corrispettivo');
-
-    if(missing.length){
-      if(status)status.textContent='Ho letto la schermata ma mancano: '+missing.join(', ')+'. Apri Diagnostica OCR e mandami il testo grezzo.';
+    if(!inferred){
+      if(status)status.textContent='La zona è corretta ma l’OCR non ha ancora prodotto una sequenza valida. Apri Diagnostica OCR e mandami il testo dei totali senza ingrandimento.';
       return;
     }
 
+    setVal('awpRaccolta',inferred.raccolta);
+    setVal('awpVincite',inferred.vincite);
+    setVal('awpCorrispettivo',inferred.corrispettivo);
+
     const havePeriod=$('#awpDal').value&&$('#awpAl').value;
     if(status)status.textContent=havePeriod
-      ? `Dati AWP letti ✓ Raccolta ${eur(found.raccolta)} · Vincite ${eur(found.vincite)} · Corrispettivo ${eur(found.corrispettivo)}. Controlla e premi Salva.`
-      : `Dati AWP letti ✓ Raccolta ${eur(found.raccolta)} · Vincite ${eur(found.vincite)} · Corrispettivo ${eur(found.corrispettivo)}. Acquisisci anche la foto del periodo.`;
+      ? `Dati AWP letti ✓ Raccolta ${eur(inferred.raccolta)} · Vincite ${eur(inferred.vincite)} · Corrispettivo ${eur(inferred.corrispettivo)}. Controlla e premi Salva.`
+      : `Dati AWP letti ✓ Raccolta ${eur(inferred.raccolta)} · Vincite ${eur(inferred.vincite)} · Corrispettivo ${eur(inferred.corrispettivo)}. Acquisisci anche la foto del periodo.`;
   }catch(e){
     console.error(e);
     if(status)status.textContent='Errore lettura dati AWP: '+e.message;

@@ -1,4 +1,4 @@
-// v13.35 - OCR AWP a zone: periodo + riepilogo AWP, con inferenza numerica
+// v13.36 - OCR AWP guidato: date in alto + soli importi nella colonna riepilogo
 
 // v13.14 - legenda grafico garantita anche su browser/cache precedenti
 (function ensureTrendLegend(){
@@ -782,15 +782,37 @@ async function pushUtileToGithubMerged(item){
 function parseOcrItalianAmount(raw){
   let s=String(raw||'').trim().replace(/[€+]/g,'').replace(/\s/g,'');
   if(!s)return null;
-  const m=s.match(/-?\d[\d.,]*[,.]\d{2}$/);
-  if(!m)return null;
-  s=m[0];
-  const lastComma=s.lastIndexOf(','),lastDot=s.lastIndexOf('.');
-  const decPos=Math.max(lastComma,lastDot);
-  const intPart=s.slice(0,decPos).replace(/[.,]/g,'');
-  const decPart=s.slice(decPos+1);
-  const n=Number(intPart+'.'+decPart);
-  return Number.isFinite(n)?n:null;
+  s=s.replace(/[^0-9,.-]/g,'');
+
+  // Formato normale: 4.079,00 / 83,65 / 4.079.00
+  let m=s.match(/-?\d[\d.,]*[,.]\d{2}$/);
+  if(m){
+    s=m[0];
+    const lastComma=s.lastIndexOf(','),lastDot=s.lastIndexOf('.');
+    const decPos=Math.max(lastComma,lastDot);
+    const intPart=s.slice(0,decPos).replace(/[.,]/g,'');
+    const decPart=s.slice(decPos+1);
+    if(decPart.length===2){
+      const n=Number(intPart+'.'+decPart);
+      if(Number.isFinite(n))return n;
+    }
+  }
+
+  // OCR frequente sul borderò: 2.85400 / 1.22500 (manca il separatore dei centesimi).
+  m=s.match(/^(\d{1,3})[.,](\d{5})$/);
+  if(m){
+    const digits=m[1]+m[2];
+    const n=Number(digits.slice(0,-2)+'.'+digits.slice(-2));
+    if(Number.isFinite(n))return n;
+  }
+
+  // Ultimo ripiego: sole cifre, ultime due considerate centesimi.
+  const digits=s.replace(/\D/g,'');
+  if(digits.length>=3 && digits.length<=8){
+    const n=Number(digits.slice(0,-2)+'.'+digits.slice(-2));
+    if(Number.isFinite(n))return n;
+  }
+  return null;
 }
 function ocrIsoDate(d,m,y){
   d=Number(d);m=Number(m);y=Number(y);
@@ -821,40 +843,36 @@ function prepareAwpCrop(bmp,xPct,yPct,wPct,hPct,targetWidth=2800){
   return canvas;
 }
 function inferAwpSummaryByMath(text){
-  const norm=String(text||'');
-  let zone=norm;
-  const awpPos=norm.search(/\bAWP\b/i);
-  if(awpPos>=0) zone=norm.slice(awpPos);
-  const vltPos=zone.search(/\bVLT\b/i);
-  if(vltPos>0) zone=zone.slice(0,vltPos);
+  const lines=String(text||'').split(/\n+/).map(x=>x.trim()).filter(Boolean);
+  const vals=[];
+  for(const line of lines){
+    const n=parseOcrItalianAmount(line);
+    if(n!==null)vals.push(n);
+  }
 
-  const vals=[...zone.matchAll(/-?\d[\d.\s]*[,.]\d{2}\+?/g)]
-    .map(m=>parseOcrItalianAmount(m[0])).filter(v=>v!==null);
-
+  // Cerchiamo la sequenza tipica del riepilogo AWP:
+  // Raccolta - Vincite = Cassa
+  // Cassa - Corrispettivo = Totale prelevato
   const strong=[];
   for(let i=0;i<=vals.length-5;i++){
-    const [a,b,c,d,e]=vals.slice(i,i+5);
-    if(a<=0||b<0||c<0||d<0||e<0)continue;
-    const err1=Math.abs((a-b)-c);
-    const err2=Math.abs((c-d)-e);
-    if(err1<=0.5 && err2<=0.5 && d<=c){
-      strong.push({raccolta:a,vincite:b,cassa:c,corrispettivo:d,prelevato:e,index:i});
+    const [raccolta,vincite,cassa,corrispettivo,prelevato]=vals.slice(i,i+5);
+    if(raccolta<=0||vincite<0||cassa<0||corrispettivo<0||prelevato<0)continue;
+    if(corrispettivo>cassa)continue;
+    const e1=Math.abs((raccolta-vincite)-cassa);
+    const e2=Math.abs((cassa-corrispettivo)-prelevato);
+    if(e1<=1 && e2<=1){
+      strong.push({raccolta,vincite,cassa,corrispettivo,prelevato,index:i});
     }
   }
   if(strong.length)return strong.at(-1);
 
-  // Il borderò AWP riporta in sequenza:
-  // Raccolta totale, Vincite totali, Cassa, Corrispettivo esercente.
-  // Anche se l'OCR perde "Totale prelevato", possiamo riconoscere il blocco
-  // perché Raccolta - Vincite = Cassa e il corrispettivo è minore della Cassa.
+  // Anche se "Totale prelevato" non viene letto, bastano i primi quattro valori.
   const fallback=[];
   for(let i=0;i<=vals.length-4;i++){
-    const [a,b,c,d]=vals.slice(i,i+4);
-    if(a<=0||b<0||c<0||d<0||d>c)continue;
-    const err=Math.abs((a-b)-c);
-    if(err<=0.5){
-      fallback.push({raccolta:a,vincite:b,cassa:c,corrispettivo:d,index:i});
-    }
+    const [raccolta,vincite,cassa,corrispettivo]=vals.slice(i,i+4);
+    if(raccolta<=0||vincite<0||cassa<0||corrispettivo<0||corrispettivo>cassa)continue;
+    const e=Math.abs((raccolta-vincite)-cassa);
+    if(e<=1)fallback.push({raccolta,vincite,cassa,corrispettivo,index:i});
   }
   return fallback.at(-1)||null;
 }
@@ -904,36 +922,51 @@ function extractAwpFromOcr(text){
 async function readAwpPhoto(file){
   if(!file)return;
   const status=$('#awpOcrStatus');
+  let worker=null;
   try{
     if(typeof Tesseract==='undefined')throw new Error('Modulo OCR non disponibile. Ricarica la pagina con connessione Internet.');
     $('#awpPhotoBtn').disabled=true;
     if(status)status.textContent='Preparazione foto...';
 
     const bmp=await createImageBitmap(file);
-    // Il borderò Sisal ha una struttura fissa: leggiamo separatamente
-    // intestazione/periodo e sezione AWP. Il testo diventa molto più grande
-    // rispetto all'OCR dell'intero foglio.
-    const periodCrop=prepareAwpCrop(bmp,0.07,0.03,0.88,0.24,2600);
-    const awpCrop=prepareAwpCrop(bmp,0.07,0.31,0.88,0.61,3000);
+
+    // Non cerchiamo più le parole "Raccolta/Vincite/Corrispettivo".
+    // Il borderò ha una struttura fissa:
+    // 1) le due date sono nella parte alta centrale;
+    // 2) i totali AWP sono nella colonna numerica in basso a destra.
+    const periodCrop=prepareAwpCrop(bmp,0.10,0.07,0.80,0.18,2600);
+    const totalsCrop=prepareAwpCrop(bmp,0.53,0.67,0.43,0.30,2200);
     try{bmp.close()}catch{}
 
-    const runOcr=async(canvas,label)=>{
-      return await Tesseract.recognize(canvas,'eng',{
-        logger:m=>{
-          if(!status)return;
-          if(m.status==='recognizing text') status.textContent=`${label}... ${Math.round((m.progress||0)*100)}%`;
-          else if(m.status && !/loading|initializing/i.test(m.status)) status.textContent=`${label}: ${m.status}`;
-        }
-      });
-    };
+    worker=await Tesseract.createWorker('eng',1,{
+      logger:m=>{
+        if(!status)return;
+        if(m.status==='recognizing text') status.textContent=`Lettura borderò... ${Math.round((m.progress||0)*100)}%`;
+      }
+    });
+    await worker.setParameters({
+      tessedit_pageseg_mode:'6',
+      tessedit_char_whitelist:'0123456789.,-/+ '
+    });
 
     if(status)status.textContent='Lettura periodo...';
-    const periodResult=await runOcr(periodCrop,'Lettura periodo');
-    if(status)status.textContent='Lettura dati AWP...';
-    const awpResult=await runOcr(awpCrop,'Lettura dati AWP');
+    const periodResult=await worker.recognize(periodCrop);
+    if(status)status.textContent='Lettura riepilogo AWP...';
+    const totalsResult=await worker.recognize(totalsCrop);
 
-    const ocrText=(periodResult?.data?.text||'')+'\n'+(awpResult?.data?.text||'');
-    const found=extractAwpFromOcr(ocrText);
+    const periodText=periodResult?.data?.text||'';
+    const dateMatches=[...periodText.matchAll(/\b(\d{1,2})[-\/.](\d{1,2})[-\/.](20\d{2})\b/g)];
+    const dates=dateMatches.map(m=>ocrIsoDate(m[1],m[2],m[3])).filter(Boolean);
+    const inferred=inferAwpSummaryByMath(totalsResult?.data?.text||'');
+
+    const found={
+      dal:dates[0]||null,
+      al:dates[1]||null,
+      raccolta:inferred?.raccolta??null,
+      vincite:inferred?.vincite??null,
+      corrispettivo:inferred?.corrispettivo??null
+    };
+
     const missing=[];
     if(found.dal)$('#awpDal').value=found.dal;else missing.push('data iniziale');
     if(found.al)$('#awpAl').value=found.al;else missing.push('data finale');
@@ -942,7 +975,7 @@ async function readAwpPhoto(file){
     if(found.corrispettivo!==null)setVal('awpCorrispettivo',found.corrispettivo);else missing.push('corrispettivo');
 
     if(missing.length){
-      if(status)status.textContent='Foto letta, ma non ho riconosciuto: '+missing.join(', ')+'. Inquadra l’intero borderò, dritto e senza tagliare intestazione o sezione AWP.';
+      if(status)status.textContent='Foto letta, ma non ho riconosciuto: '+missing.join(', ')+'. Tieni visibili sia la riga del periodo in alto sia il riepilogo AWP in basso a destra.';
     }else{
       if(status)status.textContent=`Foto letta ✓ ${dmy(found.dal)} → ${dmy(found.al)} · Raccolta ${eur(found.raccolta)} · Vincite ${eur(found.vincite)} · Corrispettivo ${eur(found.corrispettivo)}. Controlla e premi Salva.`;
     }
@@ -950,6 +983,7 @@ async function readAwpPhoto(file){
     console.error(e);
     if(status)status.textContent='Errore lettura foto: '+e.message;
   }finally{
+    try{if(worker)await worker.terminate()}catch{}
     $('#awpPhotoBtn').disabled=false;
     const input=$('#awpPhotoInput');if(input)input.value='';
   }
@@ -957,6 +991,7 @@ async function readAwpPhoto(file){
 function chooseAwpPhoto(){
   const input=$('#awpPhotoInput');if(input)input.click();
 }
+
 
 function awpWeeklyFormItem(){
   const dal=$('#awpDal')?.value||'', al=$('#awpAl')?.value||'';

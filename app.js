@@ -1,4 +1,4 @@
-// v13.34 - lettura database GitHub con retry per aperture da QR/rete mobile
+// v13.35 - OCR AWP a zone: periodo + riepilogo AWP, con inferenza numerica
 
 // v13.14 - legenda grafico garantita anche su browser/cache precedenti
 (function ensureTrendLegend(){
@@ -805,17 +805,19 @@ function normalizeOcrText(s){
     .replace(/0(?=[a-z])/g,'o')
     .replace(/1(?=[a-z])/g,'l');
 }
-async function prepareAwpImage(file){
-  const bmp=await createImageBitmap(file);
-  const scale=Math.min(2.2,Math.max(1,1800/bmp.width));
+function prepareAwpCrop(bmp,xPct,yPct,wPct,hPct,targetWidth=2800){
+  const sx=Math.max(0,Math.round(bmp.width*xPct));
+  const sy=Math.max(0,Math.round(bmp.height*yPct));
+  const sw=Math.min(bmp.width-sx,Math.round(bmp.width*wPct));
+  const sh=Math.min(bmp.height-sy,Math.round(bmp.height*hPct));
+  const scale=Math.min(4,Math.max(2,targetWidth/Math.max(1,sw)));
   const canvas=document.createElement('canvas');
-  canvas.width=Math.round(bmp.width*scale);
-  canvas.height=Math.round(bmp.height*scale);
+  canvas.width=Math.round(sw*scale);
+  canvas.height=Math.round(sh*scale);
   const ctx=canvas.getContext('2d',{willReadFrequently:true});
-  ctx.filter='grayscale(1) contrast(1.65) brightness(1.08)';
-  ctx.drawImage(bmp,0,0,canvas.width,canvas.height);
+  ctx.filter='grayscale(1) contrast(1.9) brightness(1.1)';
+  ctx.drawImage(bmp,sx,sy,sw,sh,0,0,canvas.width,canvas.height);
   ctx.filter='none';
-  try{bmp.close()}catch{}
   return canvas;
 }
 function inferAwpSummaryByMath(text){
@@ -829,17 +831,32 @@ function inferAwpSummaryByMath(text){
   const vals=[...zone.matchAll(/-?\d[\d.\s]*[,.]\d{2}\+?/g)]
     .map(m=>parseOcrItalianAmount(m[0])).filter(v=>v!==null);
 
-  const candidates=[];
+  const strong=[];
   for(let i=0;i<=vals.length-5;i++){
     const [a,b,c,d,e]=vals.slice(i,i+5);
     if(a<=0||b<0||c<0||d<0||e<0)continue;
     const err1=Math.abs((a-b)-c);
     const err2=Math.abs((c-d)-e);
-    if(err1<=0.15 && err2<=0.15 && d<=c){
-      candidates.push({raccolta:a,vincite:b,cassa:c,corrispettivo:d,prelevato:e,index:i});
+    if(err1<=0.5 && err2<=0.5 && d<=c){
+      strong.push({raccolta:a,vincite:b,cassa:c,corrispettivo:d,prelevato:e,index:i});
     }
   }
-  return candidates.at(-1)||null;
+  if(strong.length)return strong.at(-1);
+
+  // Il borderò AWP riporta in sequenza:
+  // Raccolta totale, Vincite totali, Cassa, Corrispettivo esercente.
+  // Anche se l'OCR perde "Totale prelevato", possiamo riconoscere il blocco
+  // perché Raccolta - Vincite = Cassa e il corrispettivo è minore della Cassa.
+  const fallback=[];
+  for(let i=0;i<=vals.length-4;i++){
+    const [a,b,c,d]=vals.slice(i,i+4);
+    if(a<=0||b<0||c<0||d<0||d>c)continue;
+    const err=Math.abs((a-b)-c);
+    if(err<=0.5){
+      fallback.push({raccolta:a,vincite:b,cassa:c,corrispettivo:d,index:i});
+    }
+  }
+  return fallback.at(-1)||null;
 }
 function extractAwpFromOcr(text){
   const raw=String(text||'').replace(/\r/g,'');
@@ -892,16 +909,31 @@ async function readAwpPhoto(file){
     $('#awpPhotoBtn').disabled=true;
     if(status)status.textContent='Preparazione foto...';
 
-    const prepared=await prepareAwpImage(file);
-    const result=await Tesseract.recognize(prepared,'ita',{
-      logger:m=>{
-        if(!status)return;
-        if(m.status==='recognizing text') status.textContent=`Lettura borderò... ${Math.round((m.progress||0)*100)}%`;
-        else if(m.status) status.textContent='OCR: '+m.status;
-      }
-    });
+    const bmp=await createImageBitmap(file);
+    // Il borderò Sisal ha una struttura fissa: leggiamo separatamente
+    // intestazione/periodo e sezione AWP. Il testo diventa molto più grande
+    // rispetto all'OCR dell'intero foglio.
+    const periodCrop=prepareAwpCrop(bmp,0.07,0.03,0.88,0.24,2600);
+    const awpCrop=prepareAwpCrop(bmp,0.07,0.31,0.88,0.61,3000);
+    try{bmp.close()}catch{}
 
-    const found=extractAwpFromOcr(result?.data?.text||'');
+    const runOcr=async(canvas,label)=>{
+      return await Tesseract.recognize(canvas,'eng',{
+        logger:m=>{
+          if(!status)return;
+          if(m.status==='recognizing text') status.textContent=`${label}... ${Math.round((m.progress||0)*100)}%`;
+          else if(m.status && !/loading|initializing/i.test(m.status)) status.textContent=`${label}: ${m.status}`;
+        }
+      });
+    };
+
+    if(status)status.textContent='Lettura periodo...';
+    const periodResult=await runOcr(periodCrop,'Lettura periodo');
+    if(status)status.textContent='Lettura dati AWP...';
+    const awpResult=await runOcr(awpCrop,'Lettura dati AWP');
+
+    const ocrText=(periodResult?.data?.text||'')+'\n'+(awpResult?.data?.text||'');
+    const found=extractAwpFromOcr(ocrText);
     const missing=[];
     if(found.dal)$('#awpDal').value=found.dal;else missing.push('data iniziale');
     if(found.al)$('#awpAl').value=found.al;else missing.push('data finale');
@@ -910,7 +942,7 @@ async function readAwpPhoto(file){
     if(found.corrispettivo!==null)setVal('awpCorrispettivo',found.corrispettivo);else missing.push('corrispettivo');
 
     if(missing.length){
-      if(status)status.textContent='Foto letta, ma non ho riconosciuto: '+missing.join(', ')+'. Prova a fotografare il borderò dritto, riempiendo bene l’inquadratura.';
+      if(status)status.textContent='Foto letta, ma non ho riconosciuto: '+missing.join(', ')+'. Inquadra l’intero borderò, dritto e senza tagliare intestazione o sezione AWP.';
     }else{
       if(status)status.textContent=`Foto letta ✓ ${dmy(found.dal)} → ${dmy(found.al)} · Raccolta ${eur(found.raccolta)} · Vincite ${eur(found.vincite)} · Corrispettivo ${eur(found.corrispettivo)}. Controlla e premi Salva.`;
     }

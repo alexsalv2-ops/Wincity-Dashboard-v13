@@ -305,12 +305,12 @@
             </div>
             <div class="entry-body">
               <div class="save-row awp-photo-row" style="margin:0 0 12px;flex-wrap:wrap">
-                <button id="awpPeriodPhotoBtn" class="secondary-btn">📷 1. Foto periodo</button>
+                <button id="awpPeriodPhotoBtn" class="secondary-btn" style="display:none">📷 Foto periodo</button>
                 <input id="awpPeriodPhotoInput" type="file" accept="image/*" capture="environment" hidden>
-                <button id="awpDataPhotoBtn" class="secondary-btn">📷 2. Foto dati AWP</button>
+                <button id="awpDataPhotoBtn" class="secondary-btn">📷 Foto stampa AWP</button>
                 <input id="awpDataPhotoInput" type="file" accept="image/*" capture="environment" hidden>
               </div>
-              <div id="awpOcrStatus" class="master-note" style="margin:0 0 12px">Prima fotografa la schermata con il periodo, poi la schermata con il riepilogo AWP. I valori vengono compilati ma non salvati automaticamente.</div>
+              <div id="awpOcrStatus" class="master-note" style="margin:0 0 12px">Fotografa l'intera stampa del borderò AWP: periodo, giocato, pagato e corrispettivo esercente vengono compilati dalla stessa foto.</div>
 
               <details id="awpOcrDebug" style="margin:0 0 14px;border:1px solid #d6e0e6;border-radius:12px;background:#f8fafb;padding:10px 12px">
                 <summary style="font-weight:900;cursor:pointer">🔎 Diagnostica OCR</summary>
@@ -420,6 +420,6 @@
   </nav>
 
   <div id="toast" class="toast"></div>
-  <script src="app-v1355.js"></script>
+  <script src="app-v1356.js"></script>
 </body>
 </html>

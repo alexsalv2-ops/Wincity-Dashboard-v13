@@ -1,4 +1,4 @@
-// v13.50 - OCR AWP: lettura riga per riga + doppio preprocessing + solver contabile
+// v13.51 - OCR AWP: solver globale dei valori riconosciuti + compilazione automatica
 
 // v13.14 - legenda grafico garantita anche su browser/cache precedenti
 (function ensureTrendLegend(){
@@ -1152,6 +1152,103 @@ function solveAwpRowCandidates(rows){
   return null;
 }
 
+
+function solveAwpLooseCandidates(rows){
+  const pool=[];
+  (rows||[]).forEach((list,row)=>{
+    for(const x of list||[]){
+      if(!x||!Number.isFinite(x.value))continue;
+      pool.push({value:x.value,penalty:Number(x.penalty)||0,row});
+    }
+  });
+  if(pool.length<3)return null;
+
+  const posPenalty=(x,expected)=>Math.abs((x?.row??expected)-expected)*0.35;
+
+  // Per ogni possibile Cassa cerchiamo separatamente:
+  // Raccolta - Vincite = Cassa
+  // Cassa - Corrispettivo = Totale prelevato.
+  let best=null;
+  for(const cassa of pool){
+    if(cassa.value<0)continue;
+
+    let bestTop=null;
+    for(const raccolta of pool){
+      if(raccolta===cassa||raccolta.value<=cassa.value)continue;
+      for(const vincite of pool){
+        if(vincite===cassa||vincite===raccolta||vincite.value<0||raccolta.value<=vincite.value)continue;
+        const err=Math.abs((raccolta.value-vincite.value)-cassa.value);
+        if(err>2)continue;
+        const score=err*50+raccolta.penalty+vincite.penalty+cassa.penalty+
+          posPenalty(raccolta,0)+posPenalty(vincite,1)+posPenalty(cassa,2);
+        if(!bestTop||score<bestTop.score)bestTop={raccolta,vincite,score};
+      }
+    }
+    if(!bestTop)continue;
+
+    let bestBottom=null;
+    for(const corrispettivo of pool){
+      if(corrispettivo===cassa||corrispettivo.value<0||corrispettivo.value>cassa.value)continue;
+      for(const prelevato of pool){
+        if(prelevato===cassa||prelevato===corrispettivo||prelevato.value<0||prelevato.value>cassa.value)continue;
+        const err=Math.abs((cassa.value-corrispettivo.value)-prelevato.value);
+        if(err>2)continue;
+        const score=err*50+corrispettivo.penalty+prelevato.penalty+
+          posPenalty(corrispettivo,3)+posPenalty(prelevato,4);
+        if(!bestBottom||score<bestBottom.score)bestBottom={corrispettivo,prelevato,score};
+      }
+    }
+    if(!bestBottom)continue;
+
+    const score=bestTop.score+bestBottom.score;
+    if(!best||score<best.score){
+      best={
+        raccolta:bestTop.raccolta.value,
+        vincite:bestTop.vincite.value,
+        cassa:cassa.value,
+        corrispettivo:bestBottom.corrispettivo.value,
+        prelevato:bestBottom.prelevato.value,
+        score,
+        mode:'solver globale'
+      };
+    }
+  }
+  if(best)return best;
+
+  // Fallback: se Tesseract ha perso uno dei due valori derivabili, usiamo
+  // Raccolta/Cassa/Prelevato e scegliamo la combinazione che trova maggiore
+  // riscontro negli altri numeri OCR.
+  for(const raccolta of pool){
+    for(const cassa of pool){
+      if(raccolta===cassa||raccolta.value<=cassa.value)continue;
+      for(const prelevato of pool){
+        if(prelevato===raccolta||prelevato===cassa||prelevato.value<0||prelevato.value>cassa.value)continue;
+        const vincite=raccolta.value-cassa.value;
+        const corrispettivo=cassa.value-prelevato.value;
+        if(vincite<0||corrispettivo<0)continue;
+        const nearV=Math.min(...pool.map(x=>Math.abs(x.value-vincite)));
+        const nearK=Math.min(...pool.map(x=>Math.abs(x.value-corrispettivo)));
+        if(nearV>2&&nearK>2)continue;
+        const score=raccolta.penalty+cassa.penalty+prelevato.penalty+
+          Math.min(nearV,20)*10+Math.min(nearK,20)*10+
+          posPenalty(raccolta,0)+posPenalty(cassa,2)+posPenalty(prelevato,4)+5;
+        if(!best||score<best.score){
+          best={
+            raccolta:raccolta.value,
+            vincite,
+            cassa:cassa.value,
+            corrispettivo,
+            prelevato:prelevato.value,
+            score,
+            mode:'solver globale con ricostruzione'
+          };
+        }
+      }
+    }
+  }
+  return best;
+}
+
 function valuesFromOcrLine(text){
   const raw=String(text||'').trim();
   if(!raw)return [];
@@ -1361,7 +1458,7 @@ async function readAwpDataPhoto(file){
       addAwpOcrDiagnostic('Data',`Dati AWP · ${def.name}`,row,`${raw.trim()||'(nessun testo)'}\nCandidati: ${list||'nessuno'}`);
     }
 
-    let inferred=solveAwpRowCandidates(rows);
+    let inferred=solveAwpRowCandidates(rows) || solveAwpLooseCandidates(rows);
 
     // Se il primo passaggio non basta, binarizziamo le STESSE righe già
     // denoise/downsampled. In questo modo non ri-amplifichiamo il moiré originale.
@@ -1375,7 +1472,7 @@ async function readAwpDataPhoto(file){
         const list=rows[i].map(x=>x.value.toLocaleString('it-IT',{minimumFractionDigits:2,maximumFractionDigits:2})).join(' · ');
         addAwpOcrDiagnostic('Data',`Dati AWP · ${rowDefs[i].name} · binario`,bin,`${raw.trim()||'(nessun testo)'}\nCandidati combinati: ${list||'nessuno'}`);
       }
-      inferred=solveAwpRowCandidates(rows);
+      inferred=solveAwpRowCandidates(rows) || solveAwpLooseCandidates(rows);
     }
 
     // Ultimo fallback: conserviamo anche il metodo della v13.49 sul blocco
@@ -1388,7 +1485,17 @@ async function readAwpDataPhoto(file){
       const result=await worker.recognize(numeric);
       const raw=result?.data?.text||'';
       addAwpOcrDiagnostic('Data','Dati AWP · fallback blocco v13.49',numeric,raw);
-      inferred=inferAwpSummaryByMath(raw);
+
+      // Aggiunge al solver globale anche i valori letti dal blocco intero:
+      // in questo modo basta che Tesseract abbia riconosciuto i numeri, anche
+      // se li ha collocati sulla riga sbagliata, per compilare i campi.
+      const blockValues=valuesFromOcrLine(raw);
+      if(blockValues.length){
+        const extra=blockValues.map((value,i)=>({value,penalty:0.25,source:'blocco'}));
+        rows.push(extra);
+        inferred=solveAwpLooseCandidates(rows);
+      }
+      if(!inferred)inferred=inferAwpSummaryByMath(raw);
     }
 
     if(!inferred){

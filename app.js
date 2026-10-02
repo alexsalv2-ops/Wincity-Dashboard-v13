@@ -1,4 +1,4 @@
-// v13.37 - OCR AWP: ricostruisce Vincite anche se il numero viene letto male
+// v13.38 - AWP da schermo con due foto separate: periodo + riepilogo
 
 // v13.14 - legenda grafico garantita anche su browser/cache precedenti
 (function ensureTrendLegend(){
@@ -940,77 +940,104 @@ function extractAwpFromOcr(text){
 
   return {dal,al,raccolta,vincite,corrispettivo};
 }
-async function readAwpPhoto(file){
-  if(!file)return;
-  const status=$('#awpOcrStatus');
+async function runAwpScreenOcr(file,{x,y,w,h,targetWidth=2400,whitelist='0123456789.,-/+ '},status,label){
   let worker=null;
   try{
-    if(typeof Tesseract==='undefined')throw new Error('Modulo OCR non disponibile. Ricarica la pagina con connessione Internet.');
-    $('#awpPhotoBtn').disabled=true;
-    if(status)status.textContent='Preparazione foto...';
-
     const bmp=await createImageBitmap(file);
-
-    // Non cerchiamo più le parole "Raccolta/Vincite/Corrispettivo".
-    // Il borderò ha una struttura fissa:
-    // 1) le due date sono nella parte alta centrale;
-    // 2) i totali AWP sono nella colonna numerica in basso a destra.
-    const periodCrop=prepareAwpCrop(bmp,0.10,0.07,0.80,0.18,2600);
-    const totalsCrop=prepareAwpCrop(bmp,0.53,0.67,0.43,0.30,2200);
+    const crop=prepareAwpCrop(bmp,x,y,w,h,targetWidth);
     try{bmp.close()}catch{}
 
     worker=await Tesseract.createWorker('eng',1,{
       logger:m=>{
         if(!status)return;
-        if(m.status==='recognizing text') status.textContent=`Lettura borderò... ${Math.round((m.progress||0)*100)}%`;
+        if(m.status==='recognizing text') status.textContent=`${label}... ${Math.round((m.progress||0)*100)}%`;
       }
     });
     await worker.setParameters({
       tessedit_pageseg_mode:'6',
-      tessedit_char_whitelist:'0123456789.,-/+ '
+      tessedit_char_whitelist:whitelist
     });
+    const result=await worker.recognize(crop);
+    return result?.data?.text||'';
+  }finally{
+    try{if(worker)await worker.terminate()}catch{}
+  }
+}
+async function readAwpPeriodPhoto(file){
+  if(!file)return;
+  const status=$('#awpOcrStatus');
+  try{
+    if(typeof Tesseract==='undefined')throw new Error('Modulo OCR non disponibile. Ricarica la pagina con connessione Internet.');
+    $('#awpPeriodPhotoBtn').disabled=true;
+    if(status)status.textContent='Lettura schermata periodo...';
 
-    if(status)status.textContent='Lettura periodo...';
-    const periodResult=await worker.recognize(periodCrop);
-    if(status)status.textContent='Lettura riepilogo AWP...';
-    const totalsResult=await worker.recognize(totalsCrop);
+    // Prima schermata: la riga "dal ... al ..." è nella fascia alta/centrale.
+    const text=await runAwpScreenOcr(file,{
+      x:0.06,y:0.12,w:0.88,h:0.38,targetWidth:2600,
+      whitelist:'0123456789.,-/+ '
+    },status,'Lettura periodo');
 
-    const periodText=periodResult?.data?.text||'';
-    const dateMatches=[...periodText.matchAll(/\b(\d{1,2})[-\/.](\d{1,2})[-\/.](20\d{2})\b/g)];
-    const dates=dateMatches.map(m=>ocrIsoDate(m[1],m[2],m[3])).filter(Boolean);
-    const inferred=inferAwpSummaryByMath(totalsResult?.data?.text||'');
+    const matches=[...text.matchAll(/\b(\d{1,2})[-\/.](\d{1,2})[-\/.](20\d{2})\b/g)];
+    const dates=matches.map(m=>ocrIsoDate(m[1],m[2],m[3])).filter(Boolean);
 
-    const found={
-      dal:dates[0]||null,
-      al:dates[1]||null,
-      raccolta:inferred?.raccolta??null,
-      vincite:inferred?.vincite??null,
-      corrispettivo:inferred?.corrispettivo??null
-    };
-
-    const missing=[];
-    if(found.dal)$('#awpDal').value=found.dal;else missing.push('data iniziale');
-    if(found.al)$('#awpAl').value=found.al;else missing.push('data finale');
-    if(found.raccolta!==null)setVal('awpRaccolta',found.raccolta);else missing.push('raccolta');
-    if(found.vincite!==null)setVal('awpVincite',found.vincite);else missing.push('vincite');
-    if(found.corrispettivo!==null)setVal('awpCorrispettivo',found.corrispettivo);else missing.push('corrispettivo');
-
-    if(missing.length){
-      if(status)status.textContent='Foto letta, ma non ho riconosciuto: '+missing.join(', ')+'. Tieni visibili sia la riga del periodo in alto sia il riepilogo AWP in basso a destra.';
+    if(dates.length>=2){
+      $('#awpDal').value=dates[0];
+      $('#awpAl').value=dates[1];
+      if(status)status.textContent=`Periodo letto ✓ ${dmy(dates[0])} → ${dmy(dates[1])}. Ora acquisisci la foto dei dati AWP.`;
     }else{
-      if(status)status.textContent=`Foto letta ✓ ${dmy(found.dal)} → ${dmy(found.al)} · Raccolta ${eur(found.raccolta)} · Vincite ${eur(found.vincite)} · Corrispettivo ${eur(found.corrispettivo)}. Controlla e premi Salva.`;
+      if(status)status.textContent='Non ho riconosciuto il periodo. Fotografa la prima schermata intera, con la riga “dal ... al ...” ben visibile.';
     }
   }catch(e){
     console.error(e);
-    if(status)status.textContent='Errore lettura foto: '+e.message;
+    if(status)status.textContent='Errore lettura periodo: '+e.message;
   }finally{
-    try{if(worker)await worker.terminate()}catch{}
-    $('#awpPhotoBtn').disabled=false;
-    const input=$('#awpPhotoInput');if(input)input.value='';
+    $('#awpPeriodPhotoBtn').disabled=false;
+    const input=$('#awpPeriodPhotoInput');if(input)input.value='';
   }
 }
-function chooseAwpPhoto(){
-  const input=$('#awpPhotoInput');if(input)input.click();
+async function readAwpDataPhoto(file){
+  if(!file)return;
+  const status=$('#awpOcrStatus');
+  try{
+    if(typeof Tesseract==='undefined')throw new Error('Modulo OCR non disponibile. Ricarica la pagina con connessione Internet.');
+    $('#awpDataPhotoBtn').disabled=true;
+    if(status)status.textContent='Lettura schermata dati AWP...';
+
+    // Seconda schermata: leggiamo soltanto la colonna numerica del riepilogo,
+    // evitando codici macchina e raccolte progressive.
+    const text=await runAwpScreenOcr(file,{
+      x:0.56,y:0.46,w:0.32,h:0.20,targetWidth:2300,
+      whitelist:'0123456789.,+ '
+    },status,'Lettura dati AWP');
+
+    const inferred=inferAwpSummaryByMath(text);
+
+    if(!inferred){
+      if(status)status.textContent='Non ho riconosciuto il riepilogo AWP. Fotografa la seconda schermata intera, con i cinque totali in basso a destra ben visibili.';
+      return;
+    }
+
+    setVal('awpRaccolta',inferred.raccolta);
+    setVal('awpVincite',inferred.vincite);
+    setVal('awpCorrispettivo',inferred.corrispettivo);
+
+    const havePeriod=$('#awpDal').value&&$('#awpAl').value;
+    if(status)status.textContent=havePeriod
+      ? `Dati AWP letti ✓ Raccolta ${eur(inferred.raccolta)} · Vincite ${eur(inferred.vincite)} · Corrispettivo ${eur(inferred.corrispettivo)}. Controlla e premi Salva.`
+      : `Dati AWP letti ✓ Raccolta ${eur(inferred.raccolta)} · Vincite ${eur(inferred.vincite)} · Corrispettivo ${eur(inferred.corrispettivo)}. Acquisisci anche la foto del periodo.`;
+  }catch(e){
+    console.error(e);
+    if(status)status.textContent='Errore lettura dati AWP: '+e.message;
+  }finally{
+    $('#awpDataPhotoBtn').disabled=false;
+    const input=$('#awpDataPhotoInput');if(input)input.value='';
+  }
+}
+function chooseAwpPeriodPhoto(){
+  const input=$('#awpPeriodPhotoInput');if(input)input.click();
+}
+function chooseAwpDataPhoto(){
+  const input=$('#awpDataPhotoInput');if(input)input.click();
 }
 
 
@@ -1445,8 +1472,10 @@ $('#deleteEntryBtn').addEventListener('click',deleteEntry);
 $('#saveAwpWeeklyBtn').addEventListener('click',saveAwpWeekly);
 $('#loadAwpWeeklyBtn').addEventListener('click',loadAwpWeekly);
 $('#deleteAwpWeeklyBtn').addEventListener('click',deleteAwpWeekly);
-$('#awpPhotoBtn').addEventListener('click',chooseAwpPhoto);
-$('#awpPhotoInput').addEventListener('change',e=>readAwpPhoto(e.target.files?.[0]));
+$('#awpPeriodPhotoBtn').addEventListener('click',chooseAwpPeriodPhoto);
+$('#awpPeriodPhotoInput').addEventListener('change',e=>readAwpPeriodPhoto(e.target.files?.[0]));
+$('#awpDataPhotoBtn').addEventListener('click',chooseAwpDataPhoto);
+$('#awpDataPhotoInput').addEventListener('change',e=>readAwpDataPhoto(e.target.files?.[0]));
 $('#startQrBtn').addEventListener('click',startQr);
 $('#stopQrBtn').addEventListener('click',stopQr);
 $('#applyQrBtn').addEventListener('click',()=>applyQrPayload($('#qrPayload').value));

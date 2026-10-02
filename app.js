@@ -1,4 +1,4 @@
-// v13.45 - OCR dati AWP: legge i cinque totali riga per riga
+// v13.46 - OCR dati AWP: sposta in alto il blocco dei cinque totali
 
 // v13.14 - legenda grafico garantita anche su browser/cache precedenti
 (function ensureTrendLegend(){
@@ -1133,7 +1133,7 @@ async function readAwpDataPhoto(file){
     // Dalla diagnostica la colonna è corretta: il problema è Tesseract quando
     // deve leggere più numeri insieme. Isoliamo quindi SOLO i 5 totali finali
     // e li leggiamo uno per riga.
-    const totals=prepareAwpScreenCrop(bmp,0.64,0.66,0.22,0.145,1900);
+    const totals=prepareAwpScreenCrop(bmp,0.64,0.60,0.22,0.145,1900);
     addAwpOcrDiagnostic('Data','Dati AWP · cinque totali finali',totals,'Lettura riga per riga…');
 
     const rowDefs=[

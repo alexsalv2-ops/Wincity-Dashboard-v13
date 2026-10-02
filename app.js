@@ -1,4 +1,4 @@
-// v13.38 - AWP da schermo con due foto separate: periodo + riepilogo
+// v13.39 - OCR AWP schermo: lettura intera immagine + fallback mirato
 
 // v13.14 - legenda grafico garantita anche su browser/cache precedenti
 (function ensureTrendLegend(){
@@ -940,28 +940,51 @@ function extractAwpFromOcr(text){
 
   return {dal,al,raccolta,vincite,corrispettivo};
 }
-async function runAwpScreenOcr(file,{x,y,w,h,targetWidth=2400,whitelist='0123456789.,-/+ '},status,label){
+function prepareAwpFullImage(bmp,targetWidth=2200,filter='grayscale(1) contrast(1.35) brightness(1.04)'){
+  const scale=Math.min(3,Math.max(1,targetWidth/Math.max(1,bmp.width)));
+  const canvas=document.createElement('canvas');
+  canvas.width=Math.round(bmp.width*scale);
+  canvas.height=Math.round(bmp.height*scale);
+  const ctx=canvas.getContext('2d',{willReadFrequently:true});
+  ctx.filter=filter;
+  ctx.drawImage(bmp,0,0,canvas.width,canvas.height);
+  ctx.filter='none';
+  return canvas;
+}
+async function recognizeAwpCanvas(canvas,{psm='11',whitelist=''},status,label){
   let worker=null;
   try{
-    const bmp=await createImageBitmap(file);
-    const crop=prepareAwpCrop(bmp,x,y,w,h,targetWidth);
-    try{bmp.close()}catch{}
-
     worker=await Tesseract.createWorker('eng',1,{
       logger:m=>{
         if(!status)return;
         if(m.status==='recognizing text') status.textContent=`${label}... ${Math.round((m.progress||0)*100)}%`;
       }
     });
-    await worker.setParameters({
-      tessedit_pageseg_mode:'6',
-      tessedit_char_whitelist:whitelist
-    });
-    const result=await worker.recognize(crop);
+    const params={tessedit_pageseg_mode:psm};
+    if(whitelist)params.tessedit_char_whitelist=whitelist;
+    await worker.setParameters(params);
+    const result=await worker.recognize(canvas);
     return result?.data?.text||'';
   }finally{
     try{if(worker)await worker.terminate()}catch{}
   }
+}
+function extractDatesFromScreenOcr(text){
+  const flat=String(text||'').replace(/\n+/g,' ').replace(/\s+/g,' ');
+  const dates=[];
+  const strict=[...flat.matchAll(/\b(\d{1,2})\s*[-\/.]\s*(\d{1,2})\s*[-\/.]\s*(20\d{2})\b/g)];
+  for(const m of strict){
+    const d=ocrIsoDate(m[1],m[2],m[3]);
+    if(d&&!dates.includes(d))dates.push(d);
+  }
+  if(dates.length<2){
+    const loose=[...flat.matchAll(/\b(\d{1,2})\D{1,3}(\d{1,2})\D{1,3}(20\d{2})\b/g)];
+    for(const m of loose){
+      const d=ocrIsoDate(m[1],m[2],m[3]);
+      if(d&&!dates.includes(d))dates.push(d);
+    }
+  }
+  return dates;
 }
 async function readAwpPeriodPhoto(file){
   if(!file)return;
@@ -971,21 +994,29 @@ async function readAwpPeriodPhoto(file){
     $('#awpPeriodPhotoBtn').disabled=true;
     if(status)status.textContent='Lettura schermata periodo...';
 
-    // Prima schermata: la riga "dal ... al ..." è nella fascia alta/centrale.
-    const text=await runAwpScreenOcr(file,{
-      x:0.06,y:0.12,w:0.88,h:0.38,targetWidth:2600,
-      whitelist:'0123456789.,-/+ '
-    },status,'Lettura periodo');
+    const bmp=await createImageBitmap(file);
+    const full=prepareAwpFullImage(bmp,2200);
+    let text=await recognizeAwpCanvas(full,{psm:'11'},status,'Lettura periodo');
+    let dates=extractDatesFromScreenOcr(text);
 
-    const matches=[...text.matchAll(/\b(\d{1,2})[-\/.](\d{1,2})[-\/.](20\d{2})\b/g)];
-    const dates=matches.map(m=>ocrIsoDate(m[1],m[2],m[3])).filter(Boolean);
+    // Fallback: se la lettura dell'intera schermata non basta,
+    // analizziamo solo la metà superiore senza dipendere da una posizione precisa.
+    if(dates.length<2){
+      const top=prepareAwpCrop(bmp,0.02,0.02,0.96,0.58,2600);
+      text+='\n'+await recognizeAwpCanvas(top,{
+        psm:'6',
+        whitelist:'0123456789-/. '
+      },status,'Secondo tentativo periodo');
+      dates=extractDatesFromScreenOcr(text);
+    }
+    try{bmp.close()}catch{}
 
     if(dates.length>=2){
       $('#awpDal').value=dates[0];
       $('#awpAl').value=dates[1];
       if(status)status.textContent=`Periodo letto ✓ ${dmy(dates[0])} → ${dmy(dates[1])}. Ora acquisisci la foto dei dati AWP.`;
     }else{
-      if(status)status.textContent='Non ho riconosciuto il periodo. Fotografa la prima schermata intera, con la riga “dal ... al ...” ben visibile.';
+      if(status)status.textContent='Non ho riconosciuto il periodo. Prova a tenere la riga “dal ... al ...” grande e nitida nella foto.';
     }
   }catch(e){
     console.error(e);
@@ -1003,28 +1034,55 @@ async function readAwpDataPhoto(file){
     $('#awpDataPhotoBtn').disabled=true;
     if(status)status.textContent='Lettura schermata dati AWP...';
 
-    // Seconda schermata: leggiamo soltanto la colonna numerica del riepilogo,
-    // evitando codici macchina e raccolte progressive.
-    const text=await runAwpScreenOcr(file,{
-      x:0.56,y:0.46,w:0.32,h:0.20,targetWidth:2300,
-      whitelist:'0123456789.,+ '
-    },status,'Lettura dati AWP');
+    const bmp=await createImageBitmap(file);
 
-    const inferred=inferAwpSummaryByMath(text);
+    // Primo passaggio: intera schermata con parole + numeri.
+    // Qui sfruttiamo proprio le etichette "Raccolta totale di periodo",
+    // "Vincite totali di periodo" e "Corrispettivo esercente".
+    const full=prepareAwpFullImage(bmp,2400);
+    const fullText=await recognizeAwpCanvas(full,{psm:'11'},status,'Lettura dati AWP');
+    let found=extractAwpFromOcr(fullText);
 
-    if(!inferred){
-      if(status)status.textContent='Non ho riconosciuto il riepilogo AWP. Fotografa la seconda schermata intera, con i cinque totali in basso a destra ben visibili.';
+    // Se qualche voce manca, secondo passaggio sulla metà inferiore della schermata.
+    if(found.raccolta===null||found.vincite===null||found.corrispettivo===null){
+      const lower=prepareAwpCrop(bmp,0.03,0.38,0.94,0.48,2800);
+      const lowerText=await recognizeAwpCanvas(lower,{psm:'6'},status,'Secondo tentativo dati AWP');
+      const alt=extractAwpFromOcr(lowerText);
+      if(found.raccolta===null)found.raccolta=alt.raccolta;
+      if(found.vincite===null)found.vincite=alt.vincite;
+      if(found.corrispettivo===null)found.corrispettivo=alt.corrispettivo;
+
+      // Ultimo fallback numerico sulla colonna destra dei totali.
+      if(found.raccolta===null||found.vincite===null||found.corrispettivo===null){
+        const numeric=prepareAwpCrop(bmp,0.50,0.50,0.42,0.24,2400);
+        const numText=await recognizeAwpCanvas(numeric,{
+          psm:'6',
+          whitelist:'0123456789.,+ '
+        },status,'Controllo numerico AWP');
+        const inferred=inferAwpSummaryByMath(numText);
+        if(inferred){
+          if(found.raccolta===null)found.raccolta=inferred.raccolta;
+          if(found.vincite===null)found.vincite=inferred.vincite;
+          if(found.corrispettivo===null)found.corrispettivo=inferred.corrispettivo;
+        }
+      }
+    }
+    try{bmp.close()}catch{}
+
+    const missing=[];
+    if(found.raccolta!==null)setVal('awpRaccolta',found.raccolta);else missing.push('raccolta');
+    if(found.vincite!==null)setVal('awpVincite',found.vincite);else missing.push('vincite');
+    if(found.corrispettivo!==null)setVal('awpCorrispettivo',found.corrispettivo);else missing.push('corrispettivo');
+
+    if(missing.length){
+      if(status)status.textContent='Ho letto la schermata ma mancano: '+missing.join(', ')+'. Prova a fotografare soprattutto la parte bassa con le righe di riepilogo.';
       return;
     }
 
-    setVal('awpRaccolta',inferred.raccolta);
-    setVal('awpVincite',inferred.vincite);
-    setVal('awpCorrispettivo',inferred.corrispettivo);
-
     const havePeriod=$('#awpDal').value&&$('#awpAl').value;
     if(status)status.textContent=havePeriod
-      ? `Dati AWP letti ✓ Raccolta ${eur(inferred.raccolta)} · Vincite ${eur(inferred.vincite)} · Corrispettivo ${eur(inferred.corrispettivo)}. Controlla e premi Salva.`
-      : `Dati AWP letti ✓ Raccolta ${eur(inferred.raccolta)} · Vincite ${eur(inferred.vincite)} · Corrispettivo ${eur(inferred.corrispettivo)}. Acquisisci anche la foto del periodo.`;
+      ? `Dati AWP letti ✓ Raccolta ${eur(found.raccolta)} · Vincite ${eur(found.vincite)} · Corrispettivo ${eur(found.corrispettivo)}. Controlla e premi Salva.`
+      : `Dati AWP letti ✓ Raccolta ${eur(found.raccolta)} · Vincite ${eur(found.vincite)} · Corrispettivo ${eur(found.corrispettivo)}. Acquisisci anche la foto del periodo.`;
   }catch(e){
     console.error(e);
     if(status)status.textContent='Errore lettura dati AWP: '+e.message;

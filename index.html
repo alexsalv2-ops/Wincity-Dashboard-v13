@@ -41,12 +41,6 @@
     }
   }
   </style>
-  <style>
-    .awp-diag-attempt{margin-top:10px;padding-top:10px;border-top:1px dashed #ccd7df}
-    .awp-diag-attempt>strong{display:block;margin-bottom:7px;font-size:12px}
-    .awp-diag-attempt img{display:block;width:100%;max-height:340px;object-fit:contain;background:#fff;border:1px solid #d6e0e6;border-radius:9px}
-    .awp-diag-attempt pre{white-space:pre-wrap;word-break:break-word;max-height:180px;overflow:auto;background:#101820;color:#eef4f7;border-radius:9px;padding:9px;font-size:11px;line-height:1.35;margin:8px 0 0}
-  </style>
   <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
 </head>
@@ -311,15 +305,7 @@
                 <input id="awpDataPhotoInput" type="file" accept="image/*" capture="environment" hidden>
               </div>
               <div id="awpOcrStatus" class="master-note" style="margin:0 0 12px">Fotografa l'intera stampa del borderò AWP: periodo, giocato, pagato e corrispettivo esercente vengono compilati dalla stessa foto.</div>
-
-              <details id="awpOcrDebug" style="margin:0 0 14px;border:1px solid #d6e0e6;border-radius:12px;background:#f8fafb;padding:10px 12px">
-                <summary style="font-weight:900;cursor:pointer">🔎 Diagnostica OCR</summary>
-                <p class="master-note">Qui vedi esattamente l'immagine analizzata e il testo grezzo riconosciuto. Serve solo per il test e non viene salvato.</p>
-                <div id="awpDiagPeriod"></div>
-                <div id="awpDiagData"></div>
-              </details>
-
-              <div class="two-fields">
+<div class="two-fields">
                 <label>Dal<input id="awpDal" type="date"></label>
                 <label>Al<input id="awpAl" type="date"></label>
               </div>
@@ -421,6 +407,6 @@
   </nav>
 
   <div id="toast" class="toast"></div>
-  <script src="app-v1362.js"></script>
+  <script src="app-v1363.js"></script>
 </body>
 </html>

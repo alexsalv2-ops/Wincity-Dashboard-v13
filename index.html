@@ -299,15 +299,11 @@
               <button id="loadAwpWeeklyBtn" class="secondary-btn">Carica periodo</button>
             </div>
             <div class="entry-body">
-              <div class="save-row awp-photo-row" style="margin:0 0 12px;flex-wrap:wrap">
-                <button id="awpPdfBtn" class="primary-btn">📄 Carica PDF AWP</button>
-                <input id="awpPdfInput" type="file" accept="application/pdf,.pdf" hidden>
-                <button id="awpPeriodPhotoBtn" class="secondary-btn" style="display:none">📷 Foto periodo</button>
-                <input id="awpPeriodPhotoInput" type="file" accept="image/*" capture="environment" hidden>
-                <button id="awpDataPhotoBtn" class="secondary-btn">📷 Foto stampa AWP</button>
-                <input id="awpDataPhotoInput" type="file" accept="image/*" capture="environment" hidden>
+              <div class="save-row" style="margin:0 0 12px;flex-wrap:wrap">
+                <label for="awpPdfInput" class="primary-btn" style="display:inline-flex;align-items:center;justify-content:center;cursor:pointer">📄 Carica PDF AWP</label>
+                <input id="awpPdfInput" type="file" accept="application/pdf,.pdf" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none">
               </div>
-              <div id="awpOcrStatus" class="master-note" style="margin:0 0 12px">Consigliato: carica il PDF del Rendiconto Contabile. Periodo, giocato, pagato, cassa e corrispettivo vengono letti direttamente dal testo del PDF. La foto resta disponibile come alternativa.</div>
+              <div id="awpOcrStatus" class="master-note" style="margin:0 0 12px">Carica il PDF del Rendiconto Contabile: periodo, giocato, pagato, cassa e corrispettivo vengono compilati automaticamente.</div>
 <div class="two-fields">
                 <label>Dal<input id="awpDal" type="date"></label>
                 <label>Al<input id="awpAl" type="date"></label>

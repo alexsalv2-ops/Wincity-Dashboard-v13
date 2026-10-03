@@ -43,6 +43,7 @@
   </style>
   <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 </head>
 <body>
   <header class="hero">
@@ -299,12 +300,14 @@
             </div>
             <div class="entry-body">
               <div class="save-row awp-photo-row" style="margin:0 0 12px;flex-wrap:wrap">
+                <button id="awpPdfBtn" class="primary-btn">📄 Carica PDF AWP</button>
+                <input id="awpPdfInput" type="file" accept="application/pdf,.pdf" hidden>
                 <button id="awpPeriodPhotoBtn" class="secondary-btn" style="display:none">📷 Foto periodo</button>
                 <input id="awpPeriodPhotoInput" type="file" accept="image/*" capture="environment" hidden>
                 <button id="awpDataPhotoBtn" class="secondary-btn">📷 Foto stampa AWP</button>
                 <input id="awpDataPhotoInput" type="file" accept="image/*" capture="environment" hidden>
               </div>
-              <div id="awpOcrStatus" class="master-note" style="margin:0 0 12px">Fotografa l'intera stampa del borderò AWP: periodo, giocato, pagato e corrispettivo esercente vengono compilati dalla stessa foto.</div>
+              <div id="awpOcrStatus" class="master-note" style="margin:0 0 12px">Consigliato: carica il PDF del Rendiconto Contabile. Periodo, giocato, pagato, cassa e corrispettivo vengono letti direttamente dal testo del PDF. La foto resta disponibile come alternativa.</div>
 <div class="two-fields">
                 <label>Dal<input id="awpDal" type="date"></label>
                 <label>Al<input id="awpAl" type="date"></label>

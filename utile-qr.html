@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Wincity · QR Utile SIMP</title>
+  <style>
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#0b1220;color:#eef4ff;margin:0;padding:24px}
+    .card{max-width:560px;margin:0 auto;background:#121c2d;border:1px solid #263653;border-radius:18px;padding:22px;box-shadow:0 18px 45px rgba(0,0,0,.35)}
+    h1{font-size:22px;margin:0 0 8px}.muted{color:#aebdd3}.vals{display:grid;gap:8px;margin:18px 0}
+    .row{display:flex;justify-content:space-between;gap:18px;padding:10px 12px;background:#0d1625;border-radius:10px}
+    .real{font-weight:800;font-size:18px}
+    #qrcode{background:#fff;padding:14px;border-radius:14px;width:max-content;max-width:100%;margin:18px auto}
+    .install{display:block;text-align:center;padding:13px 16px;border-radius:12px;background:#22c55e;color:#07120b;text-decoration:none;font-weight:800;margin-top:16px}
+    code{display:block;word-break:break-all;background:#0d1625;padding:10px;border-radius:10px;font-size:12px}
+    .err{color:#ffb4b4}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>QR Utile SIMP</h1>
+    <div id="content" class="muted">Generatore pronto.</div>
+    <a id="install" class="install" href="#">UTILE — trascina questo pulsante nella barra dei preferiti</a>
+  </div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script>
+(function(){
+  const DASH='https://alexsalv2-ops.github.io/Wincity-Dashboard-v13/';
+  const SELF='https://alexsalv2-ops.github.io/Wincity-Dashboard-v13/utile-qr.html';
+
+  const bookmarklet = `javascript:(async()=>{try{
+const get=async b=>{const u=new URL(location.href);u.searchParams.set('bypass',b);const r=await fetch(u.href,{credentials:'include',cache:'no-store'});if(!r.ok)throw new Error('HTTP '+r.status);const d=new DOMParser().parseFromString(await r.text(),'text/html');const tabs=[...d.querySelectorAll('table')];const t=tabs.find(x=>/Margine netto/i.test(x.innerText||x.textContent)&&/\\bTotale\\b/i.test(x.innerText||x.textContent));if(!t)throw new Error('Tabella Margine netto non trovata');const rows=[...t.querySelectorAll('tr')];const row=[...rows].reverse().find(x=>/\\bTotale\\b/i.test(x.innerText||x.textContent));if(!row)throw new Error('Riga Totale non trovata');const nums=[...row.querySelectorAll('td,th')].map(x=>(x.innerText||x.textContent).trim()).filter(x=>/^-?\\d+(?:[.,]\\d+)?$/.test(x)).map(x=>Number(x.replace(',','.')));if(nums.length<2)throw new Error('Valori non riconosciuti');return nums[nums.length-2]};
+const u=new URL(location.href),to=u.searchParams.get('dataal'),from=u.searchParams.get('datadal');if(!to)throw new Error('Data finale non trovata nell\\'URL SIMP');
+const m=to.match(/^(\\d{2})-(\\d{2})-(\\d{4})$/);if(!m)throw new Error('Formato data finale non riconosciuto: '+to);
+const completo=await get('0'),bypass=await get('2');
+const date=m[3]+m[2]+m[1],uc=Math.round(completo*100),bc=Math.round(bypass*100);
+const p='U2|'+date+'|'+uc+'|'+bc;
+location.href='${SELF}?p='+encodeURIComponent(p)+'&from='+encodeURIComponent(from||'')+'&to='+encodeURIComponent(to);
+}catch(e){alert('UTILE SIMP ERRORE:\\n'+e.message)}})();`;
+
+  document.getElementById('install').href=bookmarklet;
+
+  const q=new URLSearchParams(location.search);
+  const payload=q.get('p');
+  if(!payload) return;
+  const p=payload.split('|');
+  const box=document.getElementById('content');
+  if(p.length!==4||p[0]!=='U2'){
+    box.innerHTML='<div class="err">Payload U2 non valido.</div>';
+    return;
+  }
+  const utile=Number(p[2])/100, bypass=Number(p[3])/100, reale=utile-bypass;
+  const euro=v=>new Intl.NumberFormat('it-IT',{style:'currency',currency:'EUR'}).format(v);
+  const from=q.get('from')||'—', to=q.get('to')||'—';
+  const target=DASH+'#utile='+encodeURIComponent(payload);
+  box.innerHTML=
+    '<div class="vals">'+
+      '<div class="row"><span>Periodo</span><strong>'+from+' → '+to+'</strong></div>'+
+      '<div class="row"><span>Utile SIMP</span><strong>'+euro(utile)+'</strong></div>'+
+      '<div class="row"><span>Bypass</span><strong>'+euro(bypass)+'</strong></div>'+
+      '<div class="row real"><span>Utile reale</span><strong>'+euro(reale)+'</strong></div>'+
+    '</div>'+
+    '<div id="qrcode"></div>'+
+    '<div class="muted">Scansiona questo QR con il telefono. Contiene già Totale + Bypass.</div>';
+  new QRCode(document.getElementById('qrcode'),{text:target,width:300,height:300,correctLevel:QRCode.CorrectLevel.M});
+})();
+</script>
+</body>
+</html>

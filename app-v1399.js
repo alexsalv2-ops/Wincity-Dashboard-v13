@@ -1,4 +1,4 @@
-// v13.99 - Virtual: Lordo + aggio 4,5% affiancato al Netto dopo tasse
+// v14.02 - Virtual: etichetta esplicita Lordo = Raccolta × 4,5%
 
 // v13.14 - legenda grafico garantita anche su browser/cache precedenti
 (function ensureTrendLegend(){
@@ -43,7 +43,7 @@ let yearCursor=new Date().getFullYear();
 
 const defs={
   sp:{g:'sp-g',p:'sp-p',mode:'lordo',pct:50,pctKey:'aSp',tax:'tSp'},
-  vt:{g:'vt-g',p:'vt-p',mode:'margine_raccolta',pct:4.5,pctKey:'aVt',tax:'tVt'},
+  vt:{g:'vt-g',p:'vt-p',mode:'raccolta',pct:4.5,pctKey:'aVt',tax:'tVt'},
   aw:{g:'aw-g',p:'aw-p',mode:'raccolta',pct:5.5,pctKey:'aAw',tax:'tAw'},
   so:{g:'so-g',p:'so-p',mode:'lordo',pct:50,pctKey:'aSo',tax:'tSo'},
   vo:{g:'vo-g',p:'vo-p',mode:'raccolta',pct:4.5,pctKey:'aVo',tax:'tVo'},
@@ -70,13 +70,6 @@ function calc(g,p,d){
   const pct=db.settings[d.pctKey]===undefined?d.pct:num(db.settings[d.pctKey]);
   const taxPct=num(db.settings[d.tax]);
   const aggio=d.mode==='lordo'?lordo*(pct/100):g*(pct/100);
-
-  if(d.mode==='margine_raccolta'){
-    const totaleLordo=lordo+aggio;
-    const taxes=totaleLordo*(taxPct/100);
-    return {g,p,lordo,aggio,taxes,netto:totaleLordo,totaleLordo,pct,taxPct};
-  }
-
   const taxes=aggio*(taxPct/100);
   return {g,p,lordo,aggio,taxes,netto:aggio-taxes,totaleLordo:aggio,pct,taxPct};
 }
@@ -96,7 +89,7 @@ function onlineTotal(a){
 }
 function agencyTotal(a){
   const s=a.cats.sp,v=a.cats.vt;
-  return {g:s.g+v.g,p:s.p+v.p,lordo:s.lordo+v.lordo,netto:s.netto+v.netto};
+  return {g:s.g+v.g,p:s.p+v.p,lordo:s.lordo+v.aggio,netto:s.netto+v.netto};
 }
 
 function isoLocal(d){return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}
@@ -249,13 +242,12 @@ function kv(c,played='Giocato'){
 }
 function kvVirtual(c){
   const pct=Number.isFinite(Number(c?.pct))?Number(c.pct):4.5;
-  const taxPct=Number.isFinite(Number(c?.taxPct))?Number(c.taxPct):24.5;
-  const totale=Number.isFinite(Number(c?.totaleLordo))?Number(c.totaleLordo):num(c.lordo)+num(c.aggio);
-  const nettoFinale=totale-num(c.taxes);
+  const lordoVirtual=Number.isFinite(Number(c?.aggio))?Number(c.aggio):num(c.g)*(pct/100);
+  const nettoFinale=Number.isFinite(Number(c?.netto))?Number(c.netto):lordoVirtual-num(c.taxes);
   return `<div class="kv">
-    <div><span>Giocato / raccolta</span><b>${eur(c.g)}</b></div>
+    <div><span>Raccolta</span><b>${eur(c.g)}</b></div>
     <div><span>Pagato</span><b>${eur(c.p)}</b></div>
-    <div><span>Lordo + aggio ${rateText(pct)}%</span><b class="${tone(totale,'netto')}">${eur(totale)}</b></div>
+    <div><span>Lordo = Raccolta × ${rateText(pct)}%</span><b class="${tone(lordoVirtual,'lordo')}">${eur(lordoVirtual)}</b></div>
     <div><span>Netto dopo tasse</span><b class="${tone(nettoFinale,'netto')}">${eur(nettoFinale)}</b></div>
   </div>`;
 }
@@ -609,8 +601,8 @@ function renderDashboard(){
     $('#virtualDetail').innerHTML=`<div class="kv">
       <div><span>Media giornaliera</span><b>${eur(avgVt)}</b></div>
       <div><span>Raccolta mese</span><b>${eur(a.cats.vt.g)}</b></div>
-      <div><span>Lordo + aggio ${rateText(a.cats.vt.pct)}%</span><b class="${tone(a.cats.vt.netto,'netto')}">${eur(a.cats.vt.netto)}</b></div>
-      <div><span>Netto dopo tasse</span><b class="${tone(a.cats.vt.netto-a.cats.vt.taxes,'netto')}">${eur(a.cats.vt.netto-a.cats.vt.taxes)}</b></div>
+      <div><span>Lordo = Raccolta × ${rateText(a.cats.vt.pct)}%</span><b class="${tone(a.cats.vt.aggio,'lordo')}">${eur(a.cats.vt.aggio)}</b></div>
+      <div><span>Netto dopo tasse</span><b class="${tone(a.cats.vt.netto,'netto')}">${eur(a.cats.vt.netto)}</b></div>
       <div><span>Giornate</span><b>${days}</b></div>
     </div>`;
     $('#vltDetail').innerHTML=avgBox(avgVlt,a.cats.aw.g,'Incassato');
@@ -620,7 +612,7 @@ function renderDashboard(){
       ['⚽','Totale giocato',agency.g,'','Sport + Virtual Agenzia'],
       ['€','Totale pagato',agency.p,'','Sport + Virtual Agenzia'],
       ['▥','Lordo',agency.lordo,agency.lordo<0?'negative':'orange','Margine lordo'],
-      ['↗','Guadagno',agency.netto,agency.netto<0?'negative':'green','Sport netto + Virtual lordo (tasse Virtual separate)']
+      ['↗','Netto',agency.netto,agency.netto<0?'negative':'green','Netto dopo tasse']
     ];
     $('#kpiGrid').innerHTML=cards.map(([ic,l,v,cls,sub])=>`<article class="kpi ${cls}">
       <div class="icon">${ic}</div><span>${l}</span><strong class="${(l==='Netto'||l==='Guadagno')?tone(v,'netto'):l==='Lordo'?tone(v,'lordo'):'neutral-value'}">${eur(v)}</strong><small>${sub}</small>
@@ -688,7 +680,7 @@ function renderHistory(){
     return `<article class="history-card" id="history-day-${r.data}"><div class="history-head"><strong>${dmy(r.data)}</strong><span>${num(r.conti)} conti aperti</span></div>
       <div class="history-grid">
         <div class="history-voice"><h4>Sport Agenzia</h4>${kv(a.cats.sp)}</div>
-        <div class="history-voice"><h4>Virtual Agenzia</h4>${kv(a.cats.vt)}</div>
+        <div class="history-voice"><h4>Virtual Agenzia</h4>${kvVirtual(a.cats.vt)}</div>
         <div class="history-voice"><h4>VLT</h4>${kv(a.cats.aw,'Incassati')}</div>
         <div class="history-voice"><h4>Online</h4>${kv(on)}</div>
       </div></article>`;

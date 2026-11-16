@@ -1,4 +1,4 @@
-// v14.01 - Virtual: lordo = raccolta × 4,5%
+// v14.02 - Virtual: etichetta esplicita Lordo = Raccolta × 4,5%
 
 // v13.14 - legenda grafico garantita anche su browser/cache precedenti
 (function ensureTrendLegend(){
@@ -247,7 +247,7 @@ function kvVirtual(c){
   return `<div class="kv">
     <div><span>Raccolta</span><b>${eur(c.g)}</b></div>
     <div><span>Pagato</span><b>${eur(c.p)}</b></div>
-    <div><span>Lordo · raccolta × ${rateText(pct)}%</span><b class="${tone(lordoVirtual,'lordo')}">${eur(lordoVirtual)}</b></div>
+    <div><span>Lordo = Raccolta × ${rateText(pct)}%</span><b class="${tone(lordoVirtual,'lordo')}">${eur(lordoVirtual)}</b></div>
     <div><span>Netto dopo tasse</span><b class="${tone(nettoFinale,'netto')}">${eur(nettoFinale)}</b></div>
   </div>`;
 }
@@ -601,7 +601,7 @@ function renderDashboard(){
     $('#virtualDetail').innerHTML=`<div class="kv">
       <div><span>Media giornaliera</span><b>${eur(avgVt)}</b></div>
       <div><span>Raccolta mese</span><b>${eur(a.cats.vt.g)}</b></div>
-      <div><span>Lordo · raccolta × ${rateText(a.cats.vt.pct)}%</span><b class="${tone(a.cats.vt.aggio,'lordo')}">${eur(a.cats.vt.aggio)}</b></div>
+      <div><span>Lordo = Raccolta × ${rateText(a.cats.vt.pct)}%</span><b class="${tone(a.cats.vt.aggio,'lordo')}">${eur(a.cats.vt.aggio)}</b></div>
       <div><span>Netto dopo tasse</span><b class="${tone(a.cats.vt.netto,'netto')}">${eur(a.cats.vt.netto)}</b></div>
       <div><span>Giornate</span><b>${days}</b></div>
     </div>`;

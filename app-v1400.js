@@ -1,4 +1,4 @@
-// v14.00 - colori Virtual coerenti e netto reale dopo tasse
+// v14.02 - Virtual: etichetta esplicita Lordo = Raccolta × 4,5%
 
 // v13.14 - legenda grafico garantita anche su browser/cache precedenti
 (function ensureTrendLegend(){
@@ -43,7 +43,7 @@ let yearCursor=new Date().getFullYear();
 
 const defs={
   sp:{g:'sp-g',p:'sp-p',mode:'lordo',pct:50,pctKey:'aSp',tax:'tSp'},
-  vt:{g:'vt-g',p:'vt-p',mode:'margine_raccolta',pct:4.5,pctKey:'aVt',tax:'tVt'},
+  vt:{g:'vt-g',p:'vt-p',mode:'raccolta',pct:4.5,pctKey:'aVt',tax:'tVt'},
   aw:{g:'aw-g',p:'aw-p',mode:'raccolta',pct:5.5,pctKey:'aAw',tax:'tAw'},
   so:{g:'so-g',p:'so-p',mode:'lordo',pct:50,pctKey:'aSo',tax:'tSo'},
   vo:{g:'vo-g',p:'vo-p',mode:'raccolta',pct:4.5,pctKey:'aVo',tax:'tVo'},
@@ -70,14 +70,6 @@ function calc(g,p,d){
   const pct=db.settings[d.pctKey]===undefined?d.pct:num(db.settings[d.pctKey]);
   const taxPct=num(db.settings[d.tax]);
   const aggio=d.mode==='lordo'?lordo*(pct/100):g*(pct/100);
-
-  if(d.mode==='margine_raccolta'){
-    const totaleLordo=lordo+aggio;
-    const taxes=totaleLordo*(taxPct/100);
-    const netto=totaleLordo-taxes;
-    return {g,p,lordo,aggio,taxes,netto,totaleLordo,pct,taxPct};
-  }
-
   const taxes=aggio*(taxPct/100);
   return {g,p,lordo,aggio,taxes,netto:aggio-taxes,totaleLordo:aggio,pct,taxPct};
 }
@@ -97,7 +89,7 @@ function onlineTotal(a){
 }
 function agencyTotal(a){
   const s=a.cats.sp,v=a.cats.vt;
-  return {g:s.g+v.g,p:s.p+v.p,lordo:s.lordo+v.lordo,netto:s.netto+v.netto};
+  return {g:s.g+v.g,p:s.p+v.p,lordo:s.lordo+v.aggio,netto:s.netto+v.netto};
 }
 
 function isoLocal(d){return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}
@@ -250,12 +242,12 @@ function kv(c,played='Giocato'){
 }
 function kvVirtual(c){
   const pct=Number.isFinite(Number(c?.pct))?Number(c.pct):4.5;
-  const totale=Number.isFinite(Number(c?.totaleLordo))?Number(c.totaleLordo):num(c.lordo)+num(c.aggio);
-  const nettoFinale=Number.isFinite(Number(c?.netto))?Number(c.netto):totale-num(c.taxes);
+  const lordoVirtual=Number.isFinite(Number(c?.aggio))?Number(c.aggio):num(c.g)*(pct/100);
+  const nettoFinale=Number.isFinite(Number(c?.netto))?Number(c.netto):lordoVirtual-num(c.taxes);
   return `<div class="kv">
-    <div><span>Giocato / raccolta</span><b>${eur(c.g)}</b></div>
+    <div><span>Raccolta</span><b>${eur(c.g)}</b></div>
     <div><span>Pagato</span><b>${eur(c.p)}</b></div>
-    <div><span>Lordo + aggio ${rateText(pct)}%</span><b class="${tone(totale,'lordo')}">${eur(totale)}</b></div>
+    <div><span>Lordo = Raccolta × ${rateText(pct)}%</span><b class="${tone(lordoVirtual,'lordo')}">${eur(lordoVirtual)}</b></div>
     <div><span>Netto dopo tasse</span><b class="${tone(nettoFinale,'netto')}">${eur(nettoFinale)}</b></div>
   </div>`;
 }
@@ -609,7 +601,7 @@ function renderDashboard(){
     $('#virtualDetail').innerHTML=`<div class="kv">
       <div><span>Media giornaliera</span><b>${eur(avgVt)}</b></div>
       <div><span>Raccolta mese</span><b>${eur(a.cats.vt.g)}</b></div>
-      <div><span>Lordo + aggio ${rateText(a.cats.vt.pct)}%</span><b class="${tone(a.cats.vt.totaleLordo,'lordo')}">${eur(a.cats.vt.totaleLordo)}</b></div>
+      <div><span>Lordo = Raccolta × ${rateText(a.cats.vt.pct)}%</span><b class="${tone(a.cats.vt.aggio,'lordo')}">${eur(a.cats.vt.aggio)}</b></div>
       <div><span>Netto dopo tasse</span><b class="${tone(a.cats.vt.netto,'netto')}">${eur(a.cats.vt.netto)}</b></div>
       <div><span>Giornate</span><b>${days}</b></div>
     </div>`;
